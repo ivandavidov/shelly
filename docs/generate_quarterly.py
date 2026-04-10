@@ -1,0 +1,755 @@
+import json
+import os
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+OUTPUT_DIR = os.path.join(BASE_DIR, 'data')
+
+STATIC_META = {
+    "company": "Шелли Груп ЕД",
+    "company_en": "Shelly Group EAD",
+    "eik": "201047670",
+    "lei": "8945007IDGKD0KZ4HD95",
+    "currency": "BGN",
+    "unit": "thousands",
+    "unit_description": "Всички суми са в хиляди български лева",
+    "accounting_standard": "МСФО / IFRS",
+    "fiscal_year_end": "12-31",
+    "stock_exchanges": ["BSE - Българска фондова борса", "FSE - Франкфуртска фондова борса"],
+    "source_documents": [
+        {"quarter": "Q1 2022", "title": "Консолидиран финансов отчет", "date": "2022-03-31", "company": "ALLTERCO JSCo", "file": "shelly_group_2022_Q1.pdf"},
+        {"quarter": "Q2 2022", "title": "Консолидиран финансов отчет", "date": "2022-06-30", "company": "ALLTERCO JSCo", "file": "shelly_group_2022_Q2.pdf"},
+        {"quarter": "Q3 2022", "title": "Консолидиран финансов отчет", "date": "2022-09-30", "company": "ALLTERCO JSCo", "file": "shelly_group_2022_Q3.pdf"},
+        {"quarter": "Q4 2022", "title": "Консолидиран финансов отчет", "date": "2022-12-31", "company": "ALLTERCO JSCo", "file": "shelly_group_2022_Q4.pdf"},
+        {"quarter": "Q1 2023", "title": "Консолидиран финансов отчет", "date": "2023-03-31", "company": "Allterco AD", "file": "shelly_group_2023_Q1.pdf"},
+        {"quarter": "Q2 2023", "title": "Консолидиран финансов отчет", "date": "2023-06-30", "company": "Шелли Груп АД", "file": "shelly_group_2023_Q2.pdf"},
+        {"quarter": "Q3 2023", "title": "Консолидиран финансов отчет", "date": "2023-09-30", "company": "Шелли Груп АД", "file": "shelly_group_2023_Q3.pdf"},
+        {"quarter": "Q4 2023", "title": "Консолидиран финансов отчет", "date": "2023-12-31", "company": "Шелли Груп АД", "file": "shelly_group_2023_Q4.pdf"},
+        {"quarter": "Q1 2024", "title": "Консолидиран финансов отчет", "date": "2024-03-31", "filed": "2024-05-15", "file": "shelly_group_2024_Q1.pdf"},
+        {"quarter": "Q2 2024", "title": "Консолидиран финансов отчет", "date": "2024-06-30", "filed": "2024-08-13", "file": "shelly_group_2024_Q2.pdf"},
+        {"quarter": "Q3 2024", "title": "Консолидиран финансов отчет", "date": "2024-09-30", "filed": "2024-11-13", "file": "shelly_group_2024_Q3.pdf"},
+        {"quarter": "Q4 2024", "title": "Консолидиран финансов отчет", "date": "2024-12-31", "filed": "2025-02-24", "file": "shelly_group_2024_Q4.pdf"},
+        {"quarter": "Q1 2025", "title": "Консолидиран финансов отчет", "date": "2025-03-31", "filed": "2025-05-14", "file": "shelly_group_2025_Q1.pdf"},
+        {"quarter": "Q2 2025", "title": "Международен консолидиран финансов отчет", "date": "2025-06-30", "filed": "2025-08-15", "file": "shelly_group_2025_Q2.pdf"},
+        {"quarter": "Q3 2025", "title": "Международен консолидиран финансов отчет", "date": "2025-09-30", "filed": "2025-11-12", "file": "shelly_group_2025_Q3.pdf"},
+        {"quarter": "Q4 2025", "title": "Международен консолидиран финансов отчет", "date": "2025-12-31", "filed": "2026-02-23", "file": "shelly_group_2025_Q4.pdf"}
+    ],
+    "notes": {
+        "income_statement": "Q2, Q3 и Q4 отчетите представят кумулативни YTD данни от 1 януари. Самостоятелните тримесечни стойности са изчислени чрез разлика на кумулативните периоди.",
+        "cash_flows": "Паричните потоци също са кумулативни YTD. Самостоятелните тримесечни потоци са изчислени.",
+        "balance_sheet": "Балансовите данни са моментна снимка към края на всеки отчетен период.",
+        "comparative_2024": "Полетата 'ytd_2024' и 'quarterly_2024' в income_statement и cash_flows, както и данните в 'balance_sheet', са рекласифицирани за сравнимост с 2025 г. (от Q1 2025 отчета). Dec 2024 restated total assets = 180,606.",
+        "original_2024": "Полетата 'ytd_2024_original' и 'quarterly_2024_original', както и секцията 'balance_sheet_2024_original', съдържат данни директно от оригиналните 2024 отчети (преди рекласификации). Dec 2024 original total assets = 183,068.",
+        "financial_expenses_2024_note": "Финансовите разходи показват (593) за 9М 2024 в оригиналния Q3 отчет, но само (139) за цялата 2024 г. в Q4 отчета — отразява вътрешна рекласификация между тримесечния и годишния отчет."
+    }
+}
+
+SHAREHOLDERS = {
+    "as_of": "2025-09-30",
+    "total_shares": 18157559,
+    "holders": [
+        {"name": "Димитър Димитров", "shares": 5478120, "pct": 30.26},
+        {"name": "Светлин Тодоров", "shares": 5285620, "pct": 29.19},
+        {"name": "Други (под 5%)", "shares": 7393819, "pct": 40.55}
+    ]
+}
+
+SUBSIDIARIES = {
+    "as_of": "2025-12-31",
+    "domestic": [
+        {"name": "Шелли Трейдинг ЕООД", "country": "България", "ownership_pct": 100},
+        {"name": "Шелли Юръп ЕООД", "country": "България", "ownership_pct": 100}
+    ],
+    "foreign": [
+        {"name": "Shelly USA", "country": "САЩ", "ownership_pct": 100},
+        {"name": "Shelly DACH GmbH", "country": "Германия", "ownership_pct": 100},
+        {"name": "Shelly Tech d.o.o.", "country": "Словения", "ownership_pct": 76},
+        {"name": "Shelly Asia Ltd.", "country": "Кувейт", "ownership_pct": 80},
+        {"name": "Shelly Poland SP. Z O O.", "country": "Полша", "ownership_pct": 100}
+    ]
+}
+
+INCOME_STATEMENT_ITEMS = {
+    "revenue": {
+        "label_bg": "Приходи от продажби", "label_en": "Revenue", "note": "4.01",
+        "ytd_2025": [51759, 105550, 170036, 292869], "ytd_2024": [40164, 81656, 127038, 208704],
+        "ytd_2024_original": [40164, 81656, 127038, 208704], "ytd_2023": [27608, 54785, 86324, 146542],
+        "ytd_2022": [17150, 35753, 57829, 93234],
+        "quarterly_2025": [51759, 53791, 64486, 122833], "quarterly_2024": [40164, 41492, 45382, 81666],
+        "quarterly_2024_original": [40164, 41492, 45382, 81666], "quarterly_2023": [27608, 27177, 31539, 60218],
+        "quarterly_2022": [17150, 18603, 22076, 35405]
+    },
+    "cogs": {
+        "label_bg": "Себестойност на продажбите", "label_en": "Cost of goods sold", "note": "4.01",
+        "ytd_2025": [-24456, -46650, -72092, -123715], "ytd_2024": [-17860, -36661, -54271, -84848],
+        "ytd_2024_original": [-17860, -36661, -54271, -84277], "ytd_2023": [-12641, -24199, -36957, -62852],
+        "ytd_2022": [-7883, -18511, -28901, -46448],
+        "quarterly_2025": [-24456, -22194, -25442, -51623], "quarterly_2024": [-17860, -18801, -17610, -30577],
+        "quarterly_2024_original": [-17860, -18801, -17610, -30006], "quarterly_2023": [-12641, -11558, -12758, -25895],
+        "quarterly_2022": [-7883, -10628, -10390, -17547]
+    },
+    "gross_profit": {
+        "label_bg": "Брутна печалба", "label_en": "Gross profit",
+        "ytd_2025": [27303, 58900, 97944, 169154], "ytd_2024": [22304, 44995, 72767, 123856],
+        "ytd_2024_original": [22304, 44995, 72767, 124427], "ytd_2023": [14967, 30586, 49367, 83690],
+        "ytd_2022": [9267, 17242, 28928, 46786],
+        "quarterly_2025": [27303, 31597, 39044, 71210], "quarterly_2024": [22304, 22691, 27772, 51089],
+        "quarterly_2024_original": [22304, 22691, 27772, 51660], "quarterly_2023": [14967, 15619, 18781, 34323],
+        "quarterly_2022": [9267, 7975, 11686, 17858]
+    },
+    "other_operating_income": {
+        "label_bg": "Други приходи от дейността", "label_en": "Other operating income", "note": "4.02",
+        "ytd_2025": [1112, 3787, 5490, 6790], "ytd_2024": [437, 790, 896, 7298],
+        "ytd_2024_original": [268, 567, 790, 4702], "ytd_2023": [41, 141, 871, 936],
+        "ytd_2022": [441, 1600, 2718, 860],
+        "quarterly_2025": [1112, 2675, 1703, 1300], "quarterly_2024": [437, 353, 106, 6402],
+        "quarterly_2024_original": [268, 299, 223, 3912], "quarterly_2023": [41, 100, 730, 65],
+        "quarterly_2022": [441, 1159, 1118, -1858]
+    },
+    "selling_expenses": {
+        "label_bg": "Разходи за продажби", "label_en": "Selling expenses", "note": "4.03",
+        "ytd_2025": [-2970, -11816, -20114, -40325], "ytd_2024": [-3333, -7849, -18708, -38967],
+        "ytd_2024_original": [-3107, -7849, -18708, -36068], "ytd_2023": [-734, -2740, -3624, -10172],
+        "ytd_2022": [-733, -1101, -2078, -3900],
+        "quarterly_2025": [-2970, -8846, -8298, -20211], "quarterly_2024": [-3333, -4516, -10859, -20259],
+        "quarterly_2024_original": [-3107, -4742, -10859, -17360], "quarterly_2023": [-734, -2006, -884, -6548],
+        "quarterly_2022": [-733, -368, -977, -1822]
+    },
+    "admin_expenses": {
+        "label_bg": "Административни разходи", "label_en": "Administrative expenses", "note": "4.04",
+        "ytd_2025": [-10392, -19188, -31543, -60995], "ytd_2024": [-8258, -15984, -23657, -36195],
+        "ytd_2024_original": [-8247, -15984, -23657, -39718], "ytd_2023": [-6829, -14014, -22857, -27347],
+        "ytd_2022": [-4289, -8966, -13962, -20505],
+        "quarterly_2025": [-10392, -8796, -12355, -29452], "quarterly_2024": [-8258, -7726, -7673, -12538],
+        "quarterly_2024_original": [-8247, -7737, -7673, -16061], "quarterly_2023": [-6829, -7185, -8843, -4490],
+        "quarterly_2022": [-4289, -4677, -4996, -6543]
+    },
+    "other_operating_expenses": {
+        "label_bg": "Други разходи за дейността", "label_en": "Other operating expenses", "note": "4.05",
+        "ytd_2025": [-2027, -7865, -8945, -15285], "ytd_2024": [-562, -721, -1704, -5542],
+        "ytd_2024_original": [-757, -623, -1170, -3074], "ytd_2023": [-221, -350, -527, -6462],
+        "ytd_2022": [-107, -1202, -1829, -2849],
+        "quarterly_2025": [-2027, -5838, -1080, -6340], "quarterly_2024": [-562, -159, -983, -3838],
+        "quarterly_2024_original": [-757, 134, -547, -1904], "quarterly_2023": [-221, -129, -177, -5935],
+        "quarterly_2022": [-107, -1095, -627, -1020]
+    },
+    "ebit": {
+        "label_bg": "Печалба от оперативната дейност", "label_en": "Operating profit (EBIT)",
+        "ytd_2025": [13026, 23818, 42832, 59339], "ytd_2024": [10588, 21231, 29594, 50450],
+        "ytd_2024_original": [10461, 21106, 30022, 50269], "ytd_2023": [7224, 13623, 23230, 37382],
+        "ytd_2022": [4579, 7573, 13777, 20392],
+        "quarterly_2025": [13026, 10792, 19014, 16507], "quarterly_2024": [10588, 10643, 8363, 20856],
+        "quarterly_2024_original": [10461, 10645, 8916, 20247], "quarterly_2023": [7224, 6399, 9607, 14152],
+        "quarterly_2022": [4579, 2994, 6204, 6615]
+    },
+    "financial_income": {
+        "label_bg": "Финансови приходи", "label_en": "Financial income", "note": "4.06",
+        "ytd_2025": [7, 158, 283, 1565], "ytd_2024": [3, 18, 48, 20],
+        "ytd_2024_original": [3, 11, 15, 20], "ytd_2023": [0, 10, 61, 181], "ytd_2022": [0, 0, 0, 0],
+        "quarterly_2025": [7, 151, 125, 1282], "quarterly_2024": [3, 15, 30, -28],
+        "quarterly_2024_original": [3, 8, 4, 5], "quarterly_2023": [0, 10, 51, 120], "quarterly_2022": [0, 0, 0, 0]
+    },
+    "financial_expenses": {
+        "label_bg": "Финансови разходи", "label_en": "Financial expenses", "note": "4.07",
+        "ytd_2025": [-240, -668, -817, -3854], "ytd_2024": [-140, -159, -198, -140],
+        "ytd_2024_original": [-13, -28, -593, -139], "note_2024_original": "9М оригинален отчет показва (593), годишен Q4 показва (139) — вътрешна рекласификация между Q3 и Q4 отчет.",
+        "ytd_2023": [-241, -307, -58, -113], "ytd_2022": [-87, -151, -236, -279],
+        "quarterly_2025": [-240, -428, -149, -3037], "quarterly_2024": [-140, -19, -39, 58],
+        "quarterly_2024_original": [-13, -15, -565, 454], "quarterly_2023": [-241, -66, 249, -55],
+        "quarterly_2022": [-87, -64, -85, -43]
+    },
+    "associates_share": {
+        "label_bg": "Дял от печалбата/(загубата) на асоциирани дружества", "label_en": "Share of profit/(loss) of associates", "note": "3.05",
+        "ytd_2025": [-8, -18, -32, -42], "ytd_2024": [5, -3, -2, -25], "ytd_2024_original": [5, -3, -2, -25],
+        "ytd_2023": [34, 50, 58, 49], "ytd_2022": [6, 38, 48, 118],
+        "quarterly_2025": [-8, -10, -14, -10], "quarterly_2024": [5, -8, 1, -23],
+        "quarterly_2024_original": [5, -8, 1, -23], "quarterly_2023": [34, 16, 8, -9], "quarterly_2022": [6, 32, 10, 70]
+    },
+    "ebt": {
+        "label_bg": "Печалба преди данъци", "label_en": "Profit before tax (EBT)",
+        "ytd_2025": [12785, 23290, 42266, 57008], "ytd_2024": [10456, 21087, 29442, 50305],
+        "ytd_2024_original": [10456, 21087, 29442, 50126], "ytd_2023": [7017, 13376, 23291, 37499],
+        "ytd_2022": [4498, 7460, 13589, 20231],
+        "quarterly_2025": [12785, 10505, 18976, 14742], "quarterly_2024": [10456, 10631, 8355, 20863],
+        "quarterly_2024_original": [10456, 10631, 8355, 20684], "quarterly_2023": [7017, 6359, 9915, 14208],
+        "quarterly_2022": [4498, 2962, 6129, 6642]
+    },
+    "tax": {
+        "label_bg": "Разход за данъци", "label_en": "Income tax expense", "note": "4.08",
+        "ytd_2025": [-1777, -3359, -6026, -7178], "ytd_2024": [-1550, -2985, -3746, -6799],
+        "ytd_2024_original": [-1550, -2985, -3746, -6261], "ytd_2023": [-1095, -1949, -3840, -4579],
+        "ytd_2022": [-589, -1122, -1842, -2797],
+        "quarterly_2025": [-1777, -1582, -2667, -1152], "quarterly_2024": [-1550, -1435, -761, -3053],
+        "quarterly_2024_original": [-1550, -1435, -761, -2515], "quarterly_2023": [-1095, -854, -1891, -739],
+        "quarterly_2022": [-589, -533, -720, -955]
+    },
+    "net_profit_continuing": {
+        "label_bg": "Печалба за периода от продължаващи дейности", "label_en": "Net profit from continuing operations",
+        "ytd_2025": [11008, 19931, 36240, 49830], "ytd_2024": [8906, 18057, 25696, 43506],
+        "ytd_2024_original": [8906, 18057, 25696, 43865], "ytd_2023": [5922, 11427, 19451, 32920],
+        "ytd_2022": [3909, 6338, 11747, 17434],
+        "quarterly_2025": [11008, 8923, 16309, 13590], "quarterly_2024": [8906, 9151, 7639, 17810],
+        "quarterly_2024_original": [8906, 9151, 7639, 18169], "quarterly_2023": [5922, 5505, 8024, 13469],
+        "quarterly_2022": [3909, 2429, 5409, 5687]
+    },
+    "net_profit_discontinued": {
+        "label_bg": "Печалба за периода от преустановени дейности", "label_en": "Net profit from discontinued operations", "note": "2.9",
+        "ytd_2025": [0, 0, 0, 0], "ytd_2024": [0, 45, 1242, 1242], "ytd_2024_original": [0, 45, 1242, 1242],
+        "ytd_2023": [0, 0, 0, 0], "ytd_2022": [0, 0, 0, 0],
+        "quarterly_2025": [0, 0, 0, 0], "quarterly_2024": [0, 45, 1197, 0],
+        "quarterly_2024_original": [0, 45, 1197, 0], "quarterly_2023": [0, 0, 0, 0], "quarterly_2022": [0, 0, 0, 0]
+    },
+    "net_profit": {
+        "label_bg": "Нетна печалба", "label_en": "Net profit",
+        "ytd_2025": [11008, 19931, 36240, 49830], "ytd_2024": [8906, 18102, 26938, 44748],
+        "ytd_2024_original": [8906, 18102, 26938, 45107], "ytd_2023": [5922, 11427, 19451, 32920],
+        "ytd_2022": [3909, 6338, 11747, 17434],
+        "quarterly_2025": [11008, 8923, 16309, 13590], "quarterly_2024": [8906, 9196, 8836, 17810],
+        "quarterly_2024_original": [8906, 9196, 8836, 18169], "quarterly_2023": [5922, 5505, 8024, 13469],
+        "quarterly_2022": [3909, 2429, 5409, 5687]
+    },
+    "oci_fx": {
+        "label_bg": "Валутно-курсови разлики от превеждане на отчети на чуждестранна дейност", "label_en": "Foreign currency translation differences (OCI)",
+        "ytd_2025": [317, 1007, 1184, 1262], "ytd_2024": [-88, -24, -28, -66], "ytd_2024_original": [-88, -24, -28, -74],
+        "ytd_2023": [471, 713, 392, 1009], "ytd_2022": [-159, -1134, -1633, -1184],
+        "quarterly_2025": [317, 690, 177, 78], "quarterly_2024": [-88, 64, -4, -38],
+        "quarterly_2024_original": [-88, 64, -4, -46], "quarterly_2023": [471, 242, -321, 617], "quarterly_2022": [-159, -975, -499, 449]
+    },
+    "total_comprehensive_income": {
+        "label_bg": "ОБЩО ВСЕОБХВАТЕН ДОХОД", "label_en": "Total comprehensive income",
+        "ytd_2025": [11325, 20938, 37424, 64037], "ytd_2024": [8818, 18078, 26910, 43611],
+        "ytd_2024_original": [8818, 18078, 26910, 43969], "ytd_2023": [6393, 12140, 19843, 33929],
+        "ytd_2022": [3750, 5204, 10114, 16250],
+        "quarterly_2025": [11325, 9613, 16486, 26613], "quarterly_2024": [8818, 9260, 8832, 16701],
+        "quarterly_2024_original": [8818, 9260, 8832, 17059], "quarterly_2023": [6393, 5747, 7703, 14086],
+        "quarterly_2022": [3750, 1454, 4910, 6136]
+    }
+}
+
+CASH_FLOW_ITEMS = {
+    "operating": {
+        "receipts_customers": {
+            "label_bg": "Постъпления от клиенти", "label_en": "Receipts from customers",
+            "ytd_2025": [45361, 91473, 153283, 217858], "ytd_2024": [35097, 69397, 112731, 166961],
+            "ytd_2024_original": [35097, 69397, 112731, 167039], "ytd_2023": [26208, 54269, 77071, 116214],
+            "ytd_2022": [15752, 33013, 49865, 83914]
+        },
+        "payments_suppliers": {
+            "label_bg": "Плащания към доставчици", "label_en": "Payments to suppliers",
+            "ytd_2025": [-36463, -72883, -124579, -187323], "ytd_2024": [-29036, -56962, -93669, -132766],
+            "ytd_2024_original": [-29036, -56962, -93669, -132795], "ytd_2023": [-12653, -27433, -42631, -75912],
+            "ytd_2022": [-11336, -27514, -41402, -65109]
+        },
+        "taxes_net": {
+            "label_bg": "Възстановени/(Платени) данъци нето", "label_en": "Taxes recovered/(paid), net",
+            "ytd_2025": [4704, 6329, 4810, 7730], "ytd_2024": [343, -3420, -6050, -7416],
+            "ytd_2024_original": [343, -3420, -6050, -7416], "ytd_2023": [834, -623, -2185, -7422],
+            "ytd_2022": [-874, -3169, -4444, -7362]
+        },
+        "employee_payments": {
+            "label_bg": "Плащания към персонал и осигурителни институции", "label_en": "Payments to employees and social security",
+            "ytd_2025": [-5427, -12723, -19592, -26857], "ytd_2024": [-5820, -10556, -15681, -21109],
+            "ytd_2024_original": [-5820, -10556, -15681, -21110], "ytd_2023": [-4053, -8970, -13108, -17219],
+            "ytd_2022": [-3167, -5484, -8888, -10875]
+        },
+        "bank_fees": {
+            "label_bg": "Банкови такси", "label_en": "Bank fees",
+            "ytd_2025": [-85, -230, -316, -684], "ytd_2024": [-4, -5, -6, -14], "ytd_2024_original": [-4, -5, -6, 0],
+            "ytd_2023": [0, 0, 0, 0], "ytd_2022": [0, 0, 0, 0]
+        },
+        "other_net": {
+            "label_bg": "Други плащания, нето", "label_en": "Other payments, net",
+            "ytd_2025": [-18, 129, -110, -340], "ytd_2024": [-177, 99, -44, -280], "ytd_2024_original": [-177, 99, -44, -291],
+            "ytd_2023": [-198, -288, -382, -637], "ytd_2022": [-19, -62, -68, -373]
+        },
+        "total": {
+            "label_bg": "Нетни парични потоци от оперативна дейност", "label_en": "Net cash from operating activities",
+            "ytd_2025": [8072, 12095, 13496, 10384], "ytd_2024": [403, -1447, -2719, 5376],
+            "ytd_2024_original": [403, -1447, -2719, 5427], "ytd_2023": [10138, 16955, 18765, 15024], "ytd_2022": [356, -3216, -4937, 195],
+            "quarterly_2025": [8072, 4023, 1401, -3112], "quarterly_2024": [403, -1850, -1272, 8095],
+            "quarterly_2023": [10138, 6817, 1810, -3741], "quarterly_2022": [356, -3572, -1721, 5132]
+        }
+    },
+    "investing": {
+        "capex": {
+            "label_bg": "Плащания за придобиване на нетекущи материални и нематериални активи", "label_en": "Capital expenditure (CAPEX)",
+            "ytd_2025": [-1348, -4129, -6046, -8601], "ytd_2024": [-790, -1596, -3768, -7609],
+            "ytd_2024_original": [-790, -1596, -3768, -7791], "ytd_2023": [-584, -2199, -3008, -4765], "ytd_2022": [-433, -917, -1403, -2176]
+        },
+        "proceeds_investments": {
+            "label_bg": "Постъпления от продажба на инвестиции", "label_en": "Proceeds from sale of investments",
+            "ytd_2025": [312, 312, 1043, 1339], "ytd_2024": [178, 356, 5800, 5799], "ytd_2024_original": [178, 356, 5800, 5799],
+            "ytd_2023": [167, 191, 382, 1546], "ytd_2022": [0, 2572, 2798, 2798]
+        },
+        "investment_acquisitions": {
+            "label_bg": "Плащания за придобиване на инвестиции", "label_en": "Payments for investment acquisitions",
+            "ytd_2025": [-30, -60, -70, -141], "ytd_2024": [-1179, -2224, -2244, -2284], "ytd_2024_original": [-1179, -2224, -2244, -2284],
+            "ytd_2023": [-3942, -4194, -4418, -4448], "ytd_2022": [-40, -60, -100, -130]
+        },
+        "loans_recovered": {
+            "label_bg": "Възстановени заеми", "label_en": "Loans recovered",
+            "ytd_2025": [0, 0, 0, 0], "ytd_2024": [0, 548, 548, 548], "ytd_2024_original": [0, 548, 548, 548],
+            "ytd_2023": [-181, -548, -548, -548], "ytd_2022": [0, 0, 0, 0]
+        },
+        "proceeds_ppe_sale": {
+            "label_bg": "Парични потоци от продажба на ДМА", "label_en": "Proceeds from disposal of PPE",
+            "ytd_2025": [0, 0, 0, 97], "ytd_2024": [0, 0, 0, 0], "ytd_2024_original": [0, 0, 0, 0],
+            "ytd_2023": [0, 76, 149, 149], "ytd_2022": [0, 0, 0, 0]
+        },
+        "total": {
+            "label_bg": "Нетни парични потоци за инвестиционна дейност", "label_en": "Net cash from investing activities",
+            "ytd_2025": [-1066, -3877, -5073, -7306], "ytd_2024": [-1791, -2916, 336, -3545],
+            "ytd_2024_original": [-1791, -2916, 336, -3728], "ytd_2023": [-4540, -6674, -7443, -8066], "ytd_2022": [-473, 1595, 1295, 492],
+            "quarterly_2025": [-1066, -2811, -1196, -2233], "quarterly_2024": [-1791, -1125, 3252, -3881],
+            "quarterly_2023": [-4540, -2134, -769, -623], "quarterly_2022": [-473, 2068, -300, -803]
+        }
+    },
+    "financing": {
+        "capital_increase": {
+            "label_bg": "Увеличение на капитала", "label_en": "Capital increase",
+            "ytd_2025": [0, 0, 52, 52], "ytd_2024": [0, 55, 55, 55], "ytd_2024_original": [0, 55, 55, 55],
+            "ytd_2023": [0, 0, 51, 51], "ytd_2022": [0, 0, 0, 0]
+        },
+        "lease_payments": {
+            "label_bg": "Плащания по лизинг", "label_en": "Lease payments",
+            "ytd_2025": [-423, -900, -1467, -2173], "ytd_2024": [-71, -186, -263, -525], "ytd_2024_original": [-71, -186, -263, -525],
+            "ytd_2023": [-45, -88, -230, -299], "ytd_2022": [-76, -39, -61, -104]
+        },
+        "loans_received": {
+            "label_bg": "Получени заеми", "label_en": "Loans received",
+            "ytd_2025": [41, 3354, 8178, 12052], "ytd_2024": [297, 714, 998, 2099], "ytd_2024_original": [297, 715, 998, 2099],
+            "ytd_2023": [58, 162, 330, 263], "ytd_2022": [0, 0, 0, 0]
+        },
+        "loans_repaid": {
+            "label_bg": "Платени заеми", "label_en": "Loans repaid",
+            "ytd_2025": [-842, -1021, -6457, -6768], "ytd_2024": [-337, -743, -1964, -2214], "ytd_2024_original": [-337, -743, -1964, -2214],
+            "ytd_2023": [-128, -660, -790, -726], "ytd_2022": [-127, -254, -382, -510]
+        },
+        "interest_commissions": {
+            "label_bg": "Парични потоци, свързани с лихви и комисионни", "label_en": "Interest and commissions paid",
+            "ytd_2025": [-4, -15, -60, -106], "ytd_2024": [-7, -17, 0, -15], "ytd_2024_original": [-7, -17, 0, -15],
+            "ytd_2023": [-13, -30, -47, -57], "ytd_2022": [-14, -30, -45, -61]
+        },
+        "dividends_paid": {
+            "label_bg": "Изплатени дивиденти", "label_en": "Dividends paid",
+            "ytd_2025": [0, 0, -4603, -4603], "ytd_2024": [0, -4379, -4590, -4590], "ytd_2024_original": [0, -4379, -4590, -4590],
+            "ytd_2023": [0, 0, -4500, -4500], "ytd_2022": [0, 0, -1719, -1719]
+        },
+        "other": {
+            "label_bg": "Други постъпления/плащания, нето", "label_en": "Other receipts/payments, net",
+            "ytd_2025": [0, -11, -166, -168], "ytd_2024": [0, 4, -21, -53], "ytd_2024_original": [0, 4, -21, -53],
+            "ytd_2023": [0, 1056, -21, -12], "ytd_2022": [-14, -48, -68, -72]
+        },
+        "total": {
+            "label_bg": "Нетни парични потоци за финансова дейност", "label_en": "Net cash from financing activities",
+            "ytd_2025": [-1228, 1407, -4523, -1714], "ytd_2024": [-118, -4552, -5785, -5243],
+            "ytd_2024_original": [-118, -4551, -5785, -5243], "ytd_2023": [-128, 440, -4141, -4216], "ytd_2022": [-231, -1151, -3055, -3246],
+            "quarterly_2025": [-1228, 2635, -5930, 2809], "quarterly_2024": [-118, -4434, -1233, 542],
+            "quarterly_2023": [-128, 568, -4581, -75], "quarterly_2022": [-231, -920, -1904, -191]
+        }
+    },
+    "summary": {
+        "net_change": {
+            "label_bg": "Нетно увеличение/(намаление) на пари и парични еквиваленти за годината", "label_en": "Net change in cash and cash equivalents",
+            "ytd_2025": [5778, 9625, 3900, 1364], "ytd_2024": [-1506, -8915, -8168, -3412],
+            "ytd_2024_original": [-1506, -8914, -8168, -3544], "ytd_2023": [5470, 10721, 7181, 2742], "ytd_2022": [-348, -2772, -6697, -2559],
+            "quarterly_2025": [5778, 3847, -5725, -2536], "quarterly_2024": [-1506, -7409, 747, 4756],
+            "quarterly_2023": [5470, 5251, -3540, -4439], "quarterly_2022": [-348, -2424, -3925, 4138]
+        },
+        "fx_effect": {
+            "label_bg": "Нетни курсови разлики", "label_en": "FX effect on cash",
+            "ytd_2025": [-419, -608, -462, -1951], "ytd_2024": [-48, 86, -349, -13], "ytd_2024_original": [-48, -87, -349, 119],
+            "ytd_2023": [-69, -71, 36, -112], "ytd_2022": [0, 385, 895, 170],
+            "quarterly_2025": [-419, -189, 146, -1489], "quarterly_2024": [-48, 134, -435, 336],
+            "quarterly_2023": [-69, -2, 107, -148], "quarterly_2022": [0, 385, 510, -725]
+        },
+        "opening_cash": {
+            "label_bg": "Пари и парични еквиваленти в началото на годината", "label_en": "Opening cash",
+            "ytd_2025": [27353, 27353, 27353, 27353], "ytd_2024": [30778, 30778, 30778, 30778],
+            "ytd_2024_original": [30778, 30778, 30778, 30778], "ytd_2023": [28148, 28148, 28148, 28148], "ytd_2022": [30541, 30541, 30541, 30541]
+        },
+        "cash_held_for_sale": {
+            "label_bg": "Парични наличности, активи държани за продажба", "label_en": "Cash in assets held for sale",
+            "ytd_2024_original": [0, -1219, 0, 0],
+            "note": "Само в H1 2024 оригинален отчет — парични средства прехвърлени заедно с активите на Shelly Tech d.o.o."
+        },
+        "closing_cash": {
+            "label_bg": "Пари и парични еквиваленти в края на периода", "label_en": "Closing cash",
+            "ytd_2025": [32712, 36370, 30791, 26766], "ytd_2024": [29224, 20558, 22261, 27353],
+            "ytd_2024_original": [29224, 20558, 22261, 27353], "ytd_2023": [33549, 38798, 35365, 30778], "ytd_2022": [30193, 28154, 24739, 28152]
+        }
+    }
+}
+
+PER_SHARE = {
+    "shares": {
+        "q1_q2_2025": 18105559, "q3_q4_2025": 18157559,
+        "2024": 18105559, "2023": 18000000, "2022": 18000000
+    },
+    "eps_ytd": {
+        "label_bg": "Нетен доход на акция (кумулативен)", "label_en": "Earnings per share YTD (BGN)", "note": "4.09",
+        "labels_2025": ["Q1 2025", "H1 2025", "9M 2025", "FY 2025"],
+        "labels_2024": ["Q1 2024", "H1 2024", "9M 2024", "FY 2024"],
+        "labels_2023": ["Q1 2023", "H1 2023", "9M 2023", "FY 2023"],
+        "labels_2022": ["Q1 2022", "H1 2022", "9M 2022", "FY 2022"],
+        "ytd_2025": [0.61, 1.10, 2.00, 2.75],
+        "ytd_2024": [0.49, 1.00, 1.49, 2.47],
+        "ytd_2024_original": [0.49, 1.00, 1.49, 2.49],
+        "ytd_2023": [0.33, 0.64, 1.08, 1.83],
+        "ytd_2022": [0.217, 0.352, 0.650, 0.970]
+    },
+    "eps_quarterly": {
+        "label_bg": "Нетен доход на акция (тримесечен)", "label_en": "Earnings per share quarterly (BGN)",
+        "quarterly_2025": [0.61, 0.49, 0.90, 0.75],
+        "quarterly_2024": [0.49, 0.51, 0.49, 0.98],
+        "quarterly_2023": [0.33, 0.31, 0.44, 0.75],
+        "quarterly_2022": [0.217, 0.135, 0.298, 0.320]
+    },
+    "book_value_per_share": {
+        "label_bg": "Счетоводна стойност на акция", "label_en": "Book value per share (BGN)",
+        "dates": ["2024-12-31", "2025-03-31", "2025-06-30", "2025-09-30", "2025-12-31"],
+        "values": [8.24, 8.87, 9.13, 10.01, 11.47],
+        "dates_2024_original": ["2023-12-31", "2024-03-31", "2024-06-30", "2024-09-30", "2024-12-31"],
+        "values_2024_original": [6.09, 6.51, 6.77, 7.28, 8.26]
+    }
+}
+
+RATIOS = {
+    "quarterly_labels": {
+        "2025": ["Q1 2025", "Q2 2025", "Q3 2025", "Q4 2025", "FY 2025"],
+        "2024": ["Q1 2024", "Q2 2024", "Q3 2024", "Q4 2024", "FY 2024"]
+    },
+    "balance_sheet_dates": ["2024-12-31", "2025-03-31", "2025-06-30", "2025-09-30", "2025-12-31"],
+    "gross_margin_pct": {
+        "label_bg": "Брутен марж (%)", "label_en": "Gross margin (%)",
+        "quarterly_2025": [52.75, 58.74, 60.54, 57.97, 57.76],
+        "quarterly_2024": [55.53, 54.69, 61.19, 62.56, 59.36]
+    },
+    "ebit_margin_pct": {
+        "label_bg": "Оперативен марж / EBIT марж (%)", "label_en": "Operating margin / EBIT margin (%)",
+        "quarterly_2025": [25.17, 20.06, 29.49, 13.44, 20.26],
+        "quarterly_2024": [26.36, 25.65, 18.42, 25.54, 24.18]
+    },
+    "net_margin_pct": {
+        "label_bg": "Нетен марж (%)", "label_en": "Net profit margin (%)",
+        "quarterly_2025": [21.27, 16.59, 25.29, 11.07, 17.02],
+        "quarterly_2024": [22.17, 22.16, 19.47, 21.81, 21.44]
+    },
+    "revenue_yoy_growth_pct": {
+        "label_bg": "Ръст на приходите г/г (%)", "label_en": "Revenue YoY growth (%)",
+        "quarterly_2025_vs_2024": [28.87, 29.64, 42.10, 50.41, 40.33]
+    },
+    "net_profit_yoy_growth_pct": {
+        "label_bg": "Ръст на нетната печалба г/г (%)", "label_en": "Net profit YoY growth (%)",
+        "quarterly_2025_vs_2024": [23.60, -2.97, 84.60, -23.69, 11.35]
+    },
+    "current_ratio": {
+        "label_bg": "Коефициент на текуща ликвидност", "label_en": "Current ratio",
+        "values": [6.91, 9.67, 5.84, 6.20, 4.91]
+    },
+    "debt_to_equity": {
+        "label_bg": "Съотношение дълг/капитал", "label_en": "Debt-to-equity ratio",
+        "values": [0.215, 0.160, 0.235, 0.217, 0.268]
+    },
+    "roe_annual_pct": {
+        "label_bg": "Възвращаемост на собствения капитал - ROE %", "label_en": "Return on equity - ROE %",
+        "fy_2025": 27.93, "fy_2024": 35.33
+    }
+}
+
+BALANCE_SHEETS = {
+    "balance_sheet": {
+        "dates": ["2024-12-31", "2025-03-31", "2025-06-30", "2025-09-30", "2025-12-31"],
+        "labels": ["31 Dec 2024 (рекл.)", "31 Mar 2025", "30 Jun 2025", "30 Sep 2025", "31 Dec 2025"],
+        "note": "Dec 2024 е рекласифициран за сравнимост (restated).",
+        "assets": {
+            "non_current": {
+                "ppe": {"label_bg": "Имоти, машини и съоръжения", "label_en": "Property, plant & equipment", "note": "3.01", "values": [2200, 2169, 2221, 2341, 2231]},
+                "intangibles": {"label_bg": "Нематериални активи", "label_en": "Intangible assets", "note": "3.02", "values": [13358, 14126, 16088, 17737, 19304]},
+                "right_of_use": {"label_bg": "Активи с право на ползване", "label_en": "Right-of-use assets", "note": "3.03", "values": [11026, 10594, 10461, 10141, 9992]},
+                "goodwill": {"label_bg": "Репутация", "label_en": "Goodwill", "note": "3.04", "values": [3638, 3638, 3638, 3638, 3638]},
+                "associates": {"label_bg": "Инвестиции в асоциирани дружества", "label_en": "Investments in associates", "note": "3.05", "values": [160, 152, 142, 128, 118]},
+                "deferred_tax": {"label_bg": "Активи по отсрочени данъци", "label_en": "Deferred tax assets", "note": "3.06", "values": [303, 303, 303, 303, 211]},
+                "total": {"label_bg": "Общо нетекущи активи", "label_en": "Total non-current assets", "values": [30685, 30982, 32853, 34288, 35494]}
+            },
+            "current": {
+                "inventories": {"label_bg": "Материални запаси", "label_en": "Inventories", "note": "3.07", "values": [45558, 31489, 39860, 55017, 38078]},
+                "trade_receivables": {"label_bg": "Търговски вземания", "label_en": "Trade receivables", "note": "3.08", "values": [70131, 86036, 85851, 91268, 153861]},
+                "other_receivables": {"label_bg": "Други вземания", "label_en": "Other receivables", "note": "3.09", "values": [6879, 4404, 8833, 9588, 9804]},
+                "cash": {"label_bg": "Пари и парични еквиваленти", "label_en": "Cash and cash equivalents", "note": "3.10", "values": [27353, 32712, 36370, 30791, 26766]},
+                "total": {"label_bg": "Общо текущи активи", "label_en": "Total current assets", "values": [149921, 154641, 170914, 186664, 228509]}
+            },
+            "total": {"label_bg": "ОБЩО АКТИВИ", "label_en": "TOTAL ASSETS", "values": [180606, 185623, 203767, 220952, 264003]}
+        },
+        "liabilities": {
+            "non_current": {
+                "lease_lt": {"label_bg": "Задължения по лизинг", "label_en": "Lease liabilities (non-current)", "note": "3.12", "values": [9898, 9304, 9179, 8968, 8833]},
+                "employee_lt": {"label_bg": "Дългосрочни задължения към персонала", "label_en": "Long-term employee liabilities", "note": "3.13", "values": [327, 327, 327, 327, 489]},
+                "total": {"label_bg": "Общо нетекущи пасиви", "label_en": "Total non-current liabilities", "values": [10225, 9631, 9506, 9295, 9322]}
+            },
+            "current": {
+                "bank_loans": {"label_bg": "Банкови заеми", "label_en": "Bank loans", "note": "3.11", "values": [824, 166, 3652, 3032, 6593]},
+                "lease_st": {"label_bg": "Задължения по лизинг (краткосрочни)", "label_en": "Lease liabilities (current)", "note": "3.12", "values": [1361, 1558, 1566, 1856, 1856]},
+                "trade_payables": {"label_bg": "Търговски задължения", "label_en": "Trade payables", "note": "3.14", "values": [9820, 4349, 8574, 12447, 16875]},
+                "employee_st": {"label_bg": "Задължения към персонала и осигурителни институции", "label_en": "Employee and social security liabilities", "note": "3.15", "values": [2367, 2029, 2277, 2349, 4312]},
+                "other": {"label_bg": "Други задължения", "label_en": "Other liabilities", "note": "3.16", "values": [7332, 7894, 13180, 10422, 16907]},
+                "total": {"label_bg": "Общо текущи пасиви", "label_en": "Total current liabilities", "values": [21704, 15996, 29249, 30106, 46543]}
+            },
+            "total": {"label_bg": "ОБЩО ПАСИВИ", "label_en": "TOTAL LIABILITIES", "values": [31929, 25627, 38755, 39401, 55865]}
+        },
+        "equity": {
+            "share_capital": {"label_bg": "Регистриран акционерен капитал", "label_en": "Share capital", "note": "3.17", "values": [18106, 18106, 18106, 18158, 18158]},
+            "retained_earnings": {"label_bg": "Неразпределена печалба", "label_en": "Retained earnings", "note": "3.18", "values": [123335, 134386, 138398, 154645, 168056]},
+            "legal_reserves": {"label_bg": "Законови резерви", "label_en": "Legal reserves", "note": "3.19", "values": [1929, 1929, 1934, 1934, 1909]},
+            "premium_reserve": {"label_bg": "Премиен резерв", "label_en": "Share premium reserve", "note": "3.20", "values": [5403, 5403, 5403, 5403, 5403]},
+            "sbp_reserve": {"label_bg": "Резерв за плащане на база акции", "label_en": "Share-based payment reserve", "values": [None, None, None, None, 12997]},
+            "defined_benefit_reserve": {"label_bg": "Резерв от преоценка на планове с дефинирани доходи", "label_en": "Defined benefit plan revaluation reserve", "values": [-88, -88, -88, -88, -140]},
+            "fx_translation": {"label_bg": "Валутно-курсови разлики", "label_en": "Foreign currency translation reserve", "values": [522, 839, 1556, 1731, 1812]},
+            "equity_to_parent": {"label_bg": "Капитал, отнасящ се към притежателите на собствения капитал на Дружеството-майка", "label_en": "Equity attributable to owners of parent", "values": [149207, 160575, 165309, 181783, 208195]},
+            "nci": {"label_bg": "Неконтролиращо участие", "label_en": "Non-controlling interest", "values": [-530, -579, -297, -232, -57]},
+            "total": {"label_bg": "ОБЩО СОБСТВЕН КАПИТАЛ", "label_en": "TOTAL EQUITY", "values": [148677, 159996, 165012, 181551, 208138]}
+        }
+    },
+    "balance_sheet_2024_original": {
+        "dates": ["2023-12-31", "2024-03-31", "2024-06-30", "2024-09-30", "2024-12-31"],
+        "labels": ["31 дек 2023", "31 мар 2024", "30 юни 2024", "30 сеп 2024", "31 дек 2024"],
+        "note": "Данни директно от оригиналните отчети за 2024 г.",
+        "assets": {
+            "non_current": {
+                "ppe": {"label_bg": "Имоти, машини и съоръжения", "label_en": "Property, plant & equipment", "note": "3.01", "values": [5373, 5388, 1056, 1478, 2196]},
+                "intangibles": {"label_bg": "Нематериални активи", "label_en": "Intangible assets", "note": "3.02", "values": [7547, 8008, 8463, 9977, 13358]},
+                "right_of_use": {"label_bg": "Активи с право на ползване", "label_en": "Right-of-use assets", "note": "3.03", "values": [422, 513, 372, 468, 10703]},
+                "goodwill": {"label_bg": "Репутация", "label_en": "Goodwill", "note": "3.04", "values": [3514, 3514, 4094, 4094, 3638]},
+                "associates": {"label_bg": "Инвестиции в асоциирани дружества", "label_en": "Investments in associates", "note": "3.05", "values": [403, 408, 182, 182, 160]},
+                "lt_trade_receivables": {"label_bg": "Дългосрочни търговски вземания", "label_en": "Long-term trade receivables", "note": "3.06", "values": [1027, 1027, 1027, 1027, 0]},
+                "deferred_tax": {"label_bg": "Активи по отсрочени данъци", "label_en": "Deferred tax assets", "note": "3.07", "values": [926, 926, 910, 910, 973]},
+                "total": {"label_bg": "Общо нетекущи активи", "label_en": "Total non-current assets", "values": [19212, 19784, 16104, 18136, 31028]}
+            },
+            "current": {
+                "inventories": {"label_bg": "Материални запаси", "label_en": "Inventories", "note": "3.08", "values": [18273, 21141, 26385, 43124, 45558]},
+                "loans_receivable": {"label_bg": "Вземания по предоставени заеми", "label_en": "Loans receivable", "note": "3.09", "values": [550, 552, 0, 0, 0]},
+                "trade_receivables": {"label_bg": "Търговски вземания", "label_en": "Trade receivables", "note": "3.10", "values": [52279, 57969, 61829, 54030, 68140]},
+                "other_receivables": {"label_bg": "Други вземания", "label_en": "Other receivables", "note": "3.11", "values": [6590, 3000, 6736, 10179, 10989]},
+                "cash": {"label_bg": "Пари и парични еквиваленти", "label_en": "Cash and cash equivalents", "note": "3.12", "values": [30778, 29224, 20558, 22261, 27353]},
+                "total": {"label_bg": "Общо текущи активи", "label_en": "Total current assets", "values": [108470, 111886, 115508, 129594, 152040]}
+            },
+            "assets_held_for_sale": {"label_bg": "Нетекущи активи, класифицирани като държани за продажба", "label_en": "Assets classified as held for sale", "note": "2.9", "values": [0, 0, 5750, 0, 0]},
+            "total": {"label_bg": "ОБЩО АКТИВИ", "label_en": "TOTAL ASSETS", "values": [127682, 131670, 137362, 147730, 183068]}
+        },
+        "liabilities": {
+            "non_current": {
+                "bank_loans_lt": {"label_bg": "Банкови заеми (дългосрочни)", "label_en": "Bank loans (non-current)", "note": "3.13", "values": [1019, 951, 865, 0, 0]},
+                "lease_lt": {"label_bg": "Задължения по лизинг (дългосрочни)", "label_en": "Lease liabilities (non-current)", "note": "3.14", "values": [369, 225, 210, 228, 9600]},
+                "employee_lt": {"label_bg": "Дългосрочни задължения към персонала", "label_en": "Long-term employee liabilities", "note": "3.15", "values": [271, 271, 271, 271, 327]},
+                "total": {"label_bg": "Общо нетекущи пасиви", "label_en": "Total non-current liabilities", "values": [1659, 1447, 1346, 499, 9927]}
+            },
+            "current": {
+                "bank_loans_st": {"label_bg": "Текущ дял от банкови заеми", "label_en": "Current portion of bank loans", "note": "3.13", "values": [670, 699, 798, 724, 1586]},
+                "lease_st": {"label_bg": "Задължения по лизинг (краткосрочни)", "label_en": "Lease liabilities (current)", "note": "3.14", "values": [216, 378, 175, 268, 1333]},
+                "trade_payables": {"label_bg": "Търговски задължения", "label_en": "Trade payables", "note": "3.16", "values": [4104, 3931, 3721, 6801, 7979]},
+                "employee_st": {"label_bg": "Задължения към персонала и осигурителни институции", "label_en": "Employee and social security liabilities", "note": "3.17", "values": [2453, 1601, 1521, 1152, 2367]},
+                "other": {"label_bg": "Други задължения", "label_en": "Other liabilities", "note": "3.18", "values": [8977, 6340, 7605, 7176, 10841]},
+                "total": {"label_bg": "Общо текущи пасиви", "label_en": "Total current liabilities", "values": [16420, 12949, 13820, 16121, 24106]}
+            },
+            "liabilities_held_for_sale": {"label_bg": "Пасиви, свързани с нетекущи активи, класифицирани като държани за продажба", "label_en": "Liabilities related to assets held for sale", "note": "2.9", "values": [0, 0, 249, 0, 0]},
+            "total": {"label_bg": "ОБЩО ПАСИВИ", "label_en": "TOTAL LIABILITIES", "values": [18079, 14396, 15415, 16620, 34033]}
+        },
+        "equity": {
+            "share_capital": {"label_bg": "Регистриран акционерен капитал", "label_en": "Share capital", "note": "3.19", "values": [18051, 18051, 18106, 18106, 18106]},
+            "retained_earnings": {"label_bg": "Неразпределена печалба", "label_en": "Retained earnings", "note": "3.20", "values": [83165, 90430, 96737, 105642, 123701]},
+            "legal_reserves": {"label_bg": "Законови резерви", "label_en": "Legal reserves", "note": "3.21", "values": [2804, 3072, 1930, 1930, 1929]},
+            "premium_reserve": {"label_bg": "Премиен резерв", "label_en": "Share premium reserve", "note": "3.22", "values": [5403, 5403, 5403, 5403, 5403]},
+            "defined_benefit_reserve": {"label_bg": "Резерв от преоценка на планове с дефинирани доходи", "label_en": "Defined benefit plan revaluation reserve", "values": [3, 3, 3, 3, -88]},
+            "fx_translation": {"label_bg": "Валутно-курсови разлики", "label_en": "Foreign currency translation reserve", "values": [953, 865, 312, 669, 514]},
+            "equity_to_parent": {"label_bg": "Капитал, отнасящ се към притежателите на собствения капитал на Дружеството-майка", "label_en": "Equity attributable to owners of parent", "values": [110379, 117824, 122491, 131753, 149565]},
+            "nci": {"label_bg": "Неконтролиращо участие", "label_en": "Non-controlling interest", "values": [-776, -550, -544, -643, -530]},
+            "total": {"label_bg": "ОБЩО СОБСТВЕН КАПИТАЛ", "label_en": "TOTAL EQUITY", "values": [109603, 117274, 121947, 131110, 149035]}
+        }
+    },
+    "balance_sheet_2022": {
+        "dates": ["2021-12-31", "2022-03-31", "2022-06-30", "2022-09-30", "2022-12-31"],
+        "labels": ["31 дек 2021", "31 мар 2022", "30 юни 2022", "30 сеп 2022", "31 дек 2022"],
+        "note": "Данни от оригиналните тримесечни отчети на ALLTERCO JSCo.",
+        "assets": {
+            "non_current": {
+                "ppe": {"label_bg": "Имоти, машини и съоръжения", "label_en": "Property, plant & equipment", "values": [4798, 4794, 4737, 4692, 4653]},
+                "intangibles": {"label_bg": "Нематериални активи", "label_en": "Intangible assets", "values": [3116, 3325, 3581, 3686, 4220]},
+                "right_of_use": {"label_bg": "Активи с право на ползване", "label_en": "Right-of-use assets", "values": [108, 254, 241, 320, 296]},
+                "goodwill": {"label_bg": "Репутация", "label_en": "Goodwill", "values": [160, 160, 160, 160, 160]},
+                "associates": {"label_bg": "Инвестиции в асоциирани дружества", "label_en": "Investments in associates", "values": [40, 46, 78, 88, 157]},
+                "other_lt_investments": {"label_bg": "Други дългосрочни инвестиции", "label_en": "Other long-term investments", "values": [2624, 2419, 1262, 758, 830]},
+                "lt_trade_receivables": {"label_bg": "Дългосрочни търговски вземания", "label_en": "Long-term trade receivables", "values": [2054, 2054, 1027, 1027, 1027]},
+                "deferred_tax": {"label_bg": "Активи по отсрочени данъци", "label_en": "Deferred tax assets", "values": [72, 72, 57, 57, 292]},
+                "advances": {"label_bg": "Аванси", "label_en": "Advances", "values": [19, 0, 0, 0, 0]},
+                "total": {"label_bg": "Общо нетекущи активи", "label_en": "Total non-current assets", "values": [12991, 13124, 11143, 10788, 11635]}
+            },
+            "current": {
+                "inventories": {"label_bg": "Материални запаси", "label_en": "Inventories", "values": [7560, 8580, 11375, 17435, 23002]},
+                "trade_receivables": {"label_bg": "Търговски вземания", "label_en": "Trade receivables", "values": [19167, 21665, 21900, 23978, 21647]},
+                "other_receivables": {"label_bg": "Други вземания", "label_en": "Other receivables", "values": [1912, 1973, 3258, 3428, 3662]},
+                "st_financial_assets": {"label_bg": "Краткосрочни финансови активи", "label_en": "Short-term financial assets", "values": [0, 0, 0, 0, 175]},
+                "cash": {"label_bg": "Пари и парични еквиваленти", "label_en": "Cash and cash equivalents", "values": [30541, 30193, 28154, 24739, 28152]},
+                "prepaid": {"label_bg": "Предплатени разходи", "label_en": "Prepaid expenses", "values": [234, 111, 116, 362, 512]},
+                "total": {"label_bg": "Общо текущи активи", "label_en": "Total current assets", "values": [59414, 62522, 64803, 69942, 77110]}
+            },
+            "total": {"label_bg": "ОБЩО АКТИВИ", "label_en": "TOTAL ASSETS", "values": [72405, 75646, 75946, 80730, 88745]}
+        },
+        "liabilities": {
+            "non_current": {
+                "bank_loans_lt": {"label_bg": "Банкови заеми (дългосрочни)", "label_en": "Bank loans (non-current)", "values": [2007, 1879, 1748, 1619, 1488]},
+                "lease_lt": {"label_bg": "Задължения по лизинг (дългосрочни)", "label_en": "Lease liabilities (non-current)", "values": [80, 211, 194, 173, 157]},
+                "employee_lt": {"label_bg": "Дългосрочни задължения към персонала", "label_en": "Long-term employee liabilities", "values": [0, 0, 0, 0, 112]},
+                "total": {"label_bg": "Общо нетекущи пасиви", "label_en": "Total non-current liabilities", "values": [2087, 2090, 1942, 1792, 1757]}
+            },
+            "current": {
+                "bank_loans_st": {"label_bg": "Текущ дял от банкови заеми", "label_en": "Current portion of bank loans", "values": [572, 594, 623, 670, 668]},
+                "lease_st": {"label_bg": "Задължения по лизинг (краткосрочни)", "label_en": "Lease liabilities (current)", "values": [58, 70, 71, 74, 161]},
+                "trade_payables": {"label_bg": "Търговски задължения", "label_en": "Trade payables", "values": [1487, 853, 493, 1455, 1891]},
+                "employee_st": {"label_bg": "Задължения към персонала и осигурителни институции", "label_en": "Employee and social security liabilities", "values": [288, 286, 326, 732, 2045]},
+                "tax_liabilities": {"label_bg": "Данъчни задължения", "label_en": "Tax liabilities", "values": [1315, 1520, 1760, 2300, 2074]},
+                "other": {"label_bg": "Други задължения", "label_en": "Other liabilities", "values": [1026, 911, 2540, 748, 1133]},
+                "total": {"label_bg": "Общо текущи пасиви", "label_en": "Total current liabilities", "values": [4746, 4234, 5813, 5979, 7972]}
+            },
+            "total": {"label_bg": "ОБЩО ПАСИВИ", "label_en": "TOTAL LIABILITIES", "values": [6833, 6324, 7755, 7771, 9729]}
+        },
+        "equity": {
+            "share_capital": {"label_bg": "Регистриран акционерен капитал", "label_en": "Share capital", "values": [18000, 18000, 18000, 18000, 18000]},
+            "treasury_shares": {"label_bg": "Собствени акции", "label_en": "Treasury shares", "values": [0, 0, -780, -780, -780]},
+            "retained_earnings": {"label_bg": "Неразпределена печалба", "label_en": "Retained earnings", "values": [39394, 43303, 43937, 49341, 54958]},
+            "legal_reserves": {"label_bg": "Законови резерви", "label_en": "Legal reserves", "values": [1800, 1800, 1800, 1800, 1800]},
+            "premium_reserve": {"label_bg": "Премиен резерв", "label_en": "Share premium reserve", "values": [5403, 5403, 5403, 5403, 5403]},
+            "revaluation_reserve": {"label_bg": "Резерв от преоценка", "label_en": "Revaluation reserve (OCI)", "values": [1036, 831, -141, -782, -563]},
+            "fx_translation": {"label_bg": "Валутно-курсови разлики", "label_en": "Foreign currency translation reserve", "values": [-61, -15, -28, -23, 198]},
+            "total": {"label_bg": "ОБЩО СОБСТВЕН КАПИТАЛ", "label_en": "TOTAL EQUITY", "values": [65572, 69322, 68191, 72959, 79016]}
+        }
+    },
+    "balance_sheet_2023": {
+        "dates": ["2022-12-31", "2023-03-31", "2023-06-30", "2023-09-30", "2023-12-31"],
+        "labels": ["31 дек 2022", "31 мар 2023", "30 юни 2023", "30 сеп 2023", "31 дек 2023"],
+        "note": "31 Dec 2022 е сравнителен период от Q1 2023 отчета.",
+        "assets": {
+            "non_current": {
+                "ppe": {"label_bg": "Имоти, машини и съоръжения", "label_en": "Property, plant & equipment", "values": [4653, 5238, 5220, 5159, 5373]},
+                "intangibles": {"label_bg": "Нематериални активи", "label_en": "Intangible assets", "values": [4220, 4701, 5381, 5985, 7547]},
+                "right_of_use": {"label_bg": "Активи с право на ползване", "label_en": "Right-of-use assets", "values": [296, 270, 526, 473, 422]},
+                "goodwill": {"label_bg": "Репутация", "label_en": "Goodwill", "values": [160, 4117, 4117, 4117, 3514]},
+                "associates": {"label_bg": "Инвестиции в асоциирани дружества", "label_en": "Investments in associates", "values": [158, 192, 208, 412, 403]},
+                "other_lt_investments": {"label_bg": "Други дългосрочни инвестиции", "label_en": "Other long-term investments", "values": [830, 865, 1089, 1028, 0]},
+                "lt_trade_receivables": {"label_bg": "Дългосрочни търговски вземания", "label_en": "Long-term trade receivables", "values": [1027, 1027, 1350, 1180, 1027]},
+                "deferred_tax": {"label_bg": "Активи по отсрочени данъци", "label_en": "Deferred tax assets", "values": [348, 357, 348, 348, 917]},
+                "total": {"label_bg": "Общо нетекущи активи", "label_en": "Total non-current assets", "values": [11692, 16767, 18239, 18702, 19203]}
+            },
+            "current": {
+                "inventories": {"label_bg": "Материални запаси", "label_en": "Inventories", "values": [23002, 20892, 17761, 19466, 18273]},
+                "loans_receivable": {"label_bg": "Вземания по предоставени заеми", "label_en": "Loans receivable", "values": [0, 0, 548, 549, 550]},
+                "trade_receivables": {"label_bg": "Търговски вземания", "label_en": "Trade receivables", "values": [21647, 24150, 27434, 34280, 51620]},
+                "other_receivables": {"label_bg": "Други вземания", "label_en": "Other receivables", "values": [4309, 1522, 2424, 4555, 7258]},
+                "st_financial_assets": {"label_bg": "Краткосрочни финансови активи", "label_en": "Short-term financial assets", "values": [0, 0, 0, 0, 0]},
+                "cash": {"label_bg": "Пари и парични еквиваленти", "label_en": "Cash and cash equivalents", "values": [28148, 33549, 38798, 35365, 30778]},
+                "prepaid": {"label_bg": "Предплатени разходи", "label_en": "Prepaid expenses", "values": [0, 497, 495, 0, 0]},
+                "total": {"label_bg": "Общо текущи активи", "label_en": "Total current assets", "values": [77106, 80610, 87460, 94215, 108479]}
+            },
+            "total": {"label_bg": "ОБЩО АКТИВИ", "label_en": "TOTAL ASSETS", "values": [88798, 97377, 105699, 112917, 127682]}
+        },
+        "liabilities": {
+            "non_current": {
+                "bank_loans_lt": {"label_bg": "Банкови заеми (дългосрочни)", "label_en": "Bank loans (non-current)", "values": [1488, 1359, 1357, 1096, 1019]},
+                "lease_lt": {"label_bg": "Задължения по лизинг (дългосрочни)", "label_en": "Lease liabilities (non-current)", "values": [157, 312, 335, 423, 369]},
+                "employee_lt": {"label_bg": "Дългосрочни задължения към персонала", "label_en": "Long-term employee liabilities", "values": [112, 112, 112, 112, 270]},
+                "total": {"label_bg": "Общо нетекущи пасиви", "label_en": "Total non-current liabilities", "values": [1757, 1783, 1804, 1631, 1658]}
+            },
+            "current": {
+                "bank_loans_st": {"label_bg": "Текущ дял от банкови заеми", "label_en": "Current portion of bank loans", "values": [668, 725, 559, 799, 670]},
+                "lease_st": {"label_bg": "Задължения по лизинг (краткосрочни)", "label_en": "Lease liabilities (current)", "values": [161, 152, 388, 243, 216]},
+                "trade_payables": {"label_bg": "Търговски задължения", "label_en": "Trade payables", "values": [1891, 4042, 5694, 6874, 4118]},
+                "employee_st": {"label_bg": "Задължения към персонала и осигурителни институции", "label_en": "Employee and social security liabilities", "values": [2041, 1508, 1468, 1686, 2311]},
+                "other": {"label_bg": "Други задължения", "label_en": "Other liabilities", "values": [3208, 4032, 8342, 6157, 9099]},
+                "total": {"label_bg": "Общо текущи пасиви", "label_en": "Total current liabilities", "values": [7969, 10459, 16451, 15759, 16414]}
+            },
+            "total": {"label_bg": "ОБЩО ПАСИВИ", "label_en": "TOTAL LIABILITIES", "values": [9726, 12242, 18255, 17390, 18072]}
+        },
+        "equity": {
+            "share_capital": {"label_bg": "Регистриран акционерен капитал", "label_en": "Share capital", "values": [18000, 18000, 18000, 18051, 18051]},
+            "treasury_shares": {"label_bg": "Собствени акции", "label_en": "Treasury shares", "values": [-780, -780, 0, 0, 0]},
+            "retained_earnings": {"label_bg": "Неразпределена печалба", "label_en": "Retained earnings", "values": [55117, 59951, 61369, 69599, 83137]},
+            "legal_reserves": {"label_bg": "Законови резерви", "label_en": "Legal reserves", "values": [1800, 2804, 2804, 2804, 2804]},
+            "premium_reserve": {"label_bg": "Премиен резерв", "label_en": "Share premium reserve", "values": [5403, 5403, 5403, 5403, 5403]},
+            "revaluation_reserve": {"label_bg": "Резерв от преоценка", "label_en": "Revaluation reserve (OCI)", "values": [-507, -472, -228, -121, 0]},
+            "defined_benefit_reserve": {"label_bg": "Резерв от преоценка на планове с дефинирани доходи", "label_en": "Defined benefit plan revaluation reserve", "values": [0, 0, 0, 0, 3]},
+            "fx_translation": {"label_bg": "Валутно-курсови разлики", "label_en": "Foreign currency translation reserve", "values": [39, 475, 473, 319, 988]},
+            "equity_to_parent": {"label_bg": "Капитал, отнасящ се към притежателите на собствения капитал на Дружеството-майка", "label_en": "Equity attributable to owners of parent", "values": [79072, 85381, 87821, 96055, 110386]},
+            "nci": {"label_bg": "Неконтролиращо участие", "label_en": "Non-controlling interest", "values": [0, -246, -377, -528, -776]},
+            "total": {"label_bg": "ОБЩО СОБСТВЕН КАПИТАЛ", "label_en": "TOTAL EQUITY", "values": [79072, 85135, 87444, 95527, 109610]}
+        }
+    }
+}
+
+YTD_META = {
+    "2025": {"labels": ["Q1 2025 (3M)", "H1 2025 (6M)", "9M 2025", "FY 2025 (12M)"], "dates": ["2025-03-31", "2025-06-30", "2025-09-30", "2025-12-31"], "months": [3, 6, 9, 12]},
+    "2024_restated": {"labels": ["Q1 2024 (3M)", "H1 2024 (6M)", "9M 2024", "FY 2024 (12M)"], "dates": ["2024-03-31", "2024-06-30", "2024-09-30", "2024-12-31"], "months": [3, 6, 9, 12], "note": "Рекласифицирани данни от Q1 2025 отчета"},
+    "2024_original": {"labels": ["Q1 2024 (3M)", "H1 2024 (6M)", "9M 2024", "FY 2024 (12M)"], "dates": ["2024-03-31", "2024-06-30", "2024-09-30", "2024-12-31"], "months": [3, 6, 9, 12], "note": "Оригинални данни"},
+    "2023": {"labels": ["Q1 2023 (3M)", "H1 2023 (6M)", "9M 2023", "FY 2023 (12M)"], "dates": ["2023-03-31", "2023-06-30", "2023-09-30", "2023-12-31"], "months": [3, 6, 9, 12]},
+    "2022": {"labels": ["Q1 2022 (3M)", "H1 2022 (6M)", "9M 2022", "FY 2022 (12M)"], "dates": ["2022-03-31", "2022-06-30", "2022-09-30", "2022-12-31"], "months": [3, 6, 9, 12]}
+}
+
+QUARTERLY_LABELS = {
+    "2025": ["Q1 2025", "Q2 2025", "Q3 2025", "Q4 2025"],
+    "2024": ["Q1 2024", "Q2 2024", "Q3 2024", "Q4 2024"],
+    "2023": ["Q1 2023", "Q2 2023", "Q3 2023", "Q4 2023"],
+    "2022": ["Q1 2022", "Q2 2022", "Q3 2022", "Q4 2022"]
+}
+
+def generate_quarter_file(year, quarter, output_dir):
+    q_idx = int(quarter) - 1
+    q_label = f"Q{quarter}"
+    
+    data = {
+        "meta": {**STATIC_META, "generated_at": "2026-04-09"},
+        "shareholders": SHAREHOLDERS,
+        "subsidiaries": SUBSIDIARIES,
+        "income_statement": {
+            "ytd": YTD_META,
+            "quarterly_labels": QUARTERLY_LABELS,
+            "items": INCOME_STATEMENT_ITEMS
+        },
+        "cash_flows": {
+            "ytd": YTD_META,
+            "items": CASH_FLOW_ITEMS
+        },
+        "per_share": PER_SHARE,
+        "ratios": RATIOS,
+        "balance_sheet": BALANCE_SHEETS["balance_sheet"],
+        "balance_sheet_2024_original": BALANCE_SHEETS["balance_sheet_2024_original"],
+        "balance_sheet_2022": BALANCE_SHEETS["balance_sheet_2022"],
+        "balance_sheet_2023": BALANCE_SHEETS["balance_sheet_2023"]
+    }
+    
+    filename = f"shelly_group_{year}_{q_label}.json"
+    filepath = os.path.join(output_dir, filename)
+    
+    with open(filepath, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    
+    return filepath, len(json.dumps(data, ensure_ascii=False))
+
+def main():
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    
+    years = [2022, 2023, 2024, 2025]
+    quarters = [1, 2, 3, 4]
+    
+    total_size = 0
+    print("Generating quarterly JSON files...")
+    print("=" * 50)
+    
+    for year in years:
+        for q in quarters:
+            filepath, size = generate_quarter_file(year, q, OUTPUT_DIR)
+            total_size += size
+            print(f"  {os.path.basename(filepath)}: {size:,} chars")
+    
+    print("=" * 50)
+    print(f"Total: 16 files, {total_size:,} chars")
+    print(f"Output directory: {OUTPUT_DIR}")
+
+if __name__ == "__main__":
+    main()
