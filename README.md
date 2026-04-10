@@ -1,0 +1,2 @@
+# shelly
+Shelly Group Dashboard
