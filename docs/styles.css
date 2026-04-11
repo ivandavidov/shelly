@@ -55,6 +55,10 @@ header {
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.03em;
+  text-decoration: none;
+}
+.ticker-badge:hover {
+  background: rgba(255,255,255,0.22);
 }
 
 .controls-bar {
