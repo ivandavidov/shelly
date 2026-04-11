@@ -126,62 +126,87 @@ function buildSeriesData() {
   }
 
   if (currentMode === 'ltm') {
-    const allQuarters = [];
+    // Annual bars for all years except the last
+    const annualYears = YEARS.slice(0, -1);
+    const result = annualYears.map(yr => {
+      const rev = getYTD(IS.revenue, yr)[3];
+      const np  = getYTD(IS.net_profit, yr)[3];
+      const gp  = getYTD(IS.gross_profit, yr)[3];
+      const eb  = getYTD(IS.ebit, yr)[3];
+      const cogs    = Math.abs(getYTD(IS.cogs, yr)[3] ?? 0);
+      const sellExp = Math.abs(getYTD(IS.selling_expenses, yr)[3] ?? 0);
+      const adminExp = Math.abs(getYTD(IS.admin_expenses, yr)[3] ?? 0);
+      const otherExp = Math.abs(getYTD(IS.other_operating_expenses, yr)[3] ?? 0);
+      const finInc  = getYTD(IS.financial_income, yr)[3];
+      const finExp  = Math.abs(getYTD(IS.financial_expenses, yr)[3] ?? 0);
+      const tax     = Math.abs(getYTD(IS.tax, yr)[3] ?? 0);
+      const cfOp  = CF.operating.total[`ytd_${yr}`]?.[3] ?? null;
+      const cfCap = CF.investing.capex[`ytd_${yr}`]?.[3] ?? null;
+      const cfNet = CF.summary.net_change[`ytd_${yr}`]?.[3] ?? null;
+      const eps   = D.per_share.eps_ytd[`ytd_${yr}`]?.[3] ?? null;
+      return {
+        label: yr, revenue: rev, net_profit: np, gross_profit: gp, ebit: eb,
+        cogs, sellExp, adminExp, otherExp, finInc, finExp, tax,
+        cf_op: cfOp, cf_fcf: (cfOp !== null && cfCap !== null ? cfOp + cfCap : null), cf_net: cfNet, eps
+      };
+    });
+
+    // Single LTM bar: sum of last 4 available quarters
+    const allQ = [];
     for (const yr of YEARS) {
-      const revQ  = getQuarterly(IS.revenue, yr);
-      const npQ   = getQuarterly(IS.net_profit, yr);
-      const gpQ   = getQuarterly(IS.gross_profit, yr);
-      const ebQ   = getQuarterly(IS.ebit, yr);
-      const cogsQ = getQuarterly(IS.cogs, yr).map(v => Math.abs(v));
-      const sellQ = getQuarterly(IS.selling_expenses, yr).map(v => Math.abs(v));
-      const adminQ = getQuarterly(IS.admin_expenses, yr).map(v => Math.abs(v));
-      const otherQ = getQuarterly(IS.other_operating_expenses, yr).map(v => Math.abs(v));
+      const revQ    = getQuarterly(IS.revenue, yr);
+      const npQ     = getQuarterly(IS.net_profit, yr);
+      const gpQ     = getQuarterly(IS.gross_profit, yr);
+      const ebQ     = getQuarterly(IS.ebit, yr);
+      const cogsQ   = getQuarterly(IS.cogs, yr).map(v => Math.abs(v ?? 0));
+      const sellQ   = getQuarterly(IS.selling_expenses, yr).map(v => Math.abs(v ?? 0));
+      const adminQ  = getQuarterly(IS.admin_expenses, yr).map(v => Math.abs(v ?? 0));
+      const otherQ  = getQuarterly(IS.other_operating_expenses, yr).map(v => Math.abs(v ?? 0));
       const finIncQ = getQuarterly(IS.financial_income, yr);
-      const finExpQ = getQuarterly(IS.financial_expenses, yr).map(v => Math.abs(v));
-      const taxQ = getQuarterly(IS.tax, yr).map(v => Math.abs(v));
-      const cfOpQ = CF.operating.total[`quarterly_${yr}`] || [null,null,null,null];
+      const finExpQ = getQuarterly(IS.financial_expenses, yr).map(v => Math.abs(v ?? 0));
+      const taxQ    = getQuarterly(IS.tax, yr).map(v => Math.abs(v ?? 0));
+      const cfOpQ   = CF.operating.total[`quarterly_${yr}`] || [null,null,null,null];
       const cfCapYTD = CF.investing.capex[`ytd_${yr}`] || [null,null,null,null];
-      const cfCapQ = [
+      const cfCapQ  = [
         cfCapYTD[0],
         cfCapYTD[1] !== null && cfCapYTD[0] !== null ? cfCapYTD[1] - cfCapYTD[0] : null,
         cfCapYTD[2] !== null && cfCapYTD[1] !== null ? cfCapYTD[2] - cfCapYTD[1] : null,
         cfCapYTD[3] !== null && cfCapYTD[2] !== null ? cfCapYTD[3] - cfCapYTD[2] : null,
       ];
-      const cfNetQ = CF.summary.net_change[`quarterly_${yr}`] || [null,null,null,null];
-      const qLabels = ['Q1','Q2','Q3','Q4'];
-      const epsQ2 = D.per_share.eps_quarterly?.["quarterly_" + yr] || null;
+      const cfNetQ  = CF.summary.net_change[`quarterly_${yr}`] || [null,null,null,null];
+      const epsQ    = D.per_share.eps_quarterly?.[`quarterly_${yr}`] || null;
       for (let i = 0; i < 4; i++) {
-        allQuarters.push({
-          labelShort: `${qLabels[i]}'${yr.slice(2)}`, yr, qi: i,
-          revenue: revQ[i], net_profit: npQ[i], gross_profit: gpQ[i], ebit: ebQ[i],
-          cogs: cogsQ[i], sellExp: sellQ[i], adminExp: adminQ[i], otherExp: otherQ[i],
-          finInc: finIncQ[i], finExp: finExpQ[i], tax: taxQ[i],
-          cf_op: cfOpQ[i], cf_cap: cfCapQ[i], cf_net: cfNetQ[i],
-          eps: epsQ2 ? epsQ2[i] : null
-        });
+        if (revQ[i] !== null) {
+          allQ.push({
+            labelShort: `Q${i+1}'${yr.slice(2)}`, yr, qi: i,
+            revenue: revQ[i], net_profit: npQ[i], gross_profit: gpQ[i], ebit: ebQ[i],
+            cogs: cogsQ[i], sellExp: sellQ[i], adminExp: adminQ[i], otherExp: otherQ[i],
+            finInc: finIncQ[i], finExp: finExpQ[i], tax: taxQ[i],
+            cf_op: cfOpQ[i], cf_cap: cfCapQ[i], cf_net: cfNetQ[i],
+            eps: epsQ ? epsQ[i] : null
+          });
+        }
       }
     }
-    const result = [];
-    for (let i = 3; i < allQuarters.length; i++) {
-      const window4 = allQuarters.slice(i - 3, i + 1);
-      const sum = (key) => {
-        const vals = window4.map(q => q[key]);
-        if (vals.some(v => v === null)) return null;
-        return vals.reduce((a, b) => a + b, 0);
+    if (allQ.length >= 4) {
+      const w4 = allQ.slice(-4);
+      const sumQ = key => {
+        const vals = w4.map(q => q[key]);
+        return vals.some(v => v === null) ? null : vals.reduce((a, b) => a + b, 0);
       };
-      const cfOp = sum('cf_op');
-      const cfCap = sum('cf_cap');
-      const q = allQuarters[i];
+      const last = w4[3];
+      const cfOp = sumQ('cf_op');
+      const cfCap = sumQ('cf_cap');
       result.push({
-        label: `LTM ${q.labelShort}`, yr: q.yr,
-        revenue: sum('revenue'), net_profit: sum('net_profit'),
-        gross_profit: sum('gross_profit'), ebit: sum('ebit'),
-        cogs: sum('cogs'), sellExp: sum('sellExp'), adminExp: sum('adminExp'), otherExp: sum('otherExp'),
-        finInc: sum('finInc'), finExp: sum('finExp'), tax: sum('tax'),
+        label: `LTM ${last.labelShort}`,
+        revenue: sumQ('revenue'), net_profit: sumQ('net_profit'),
+        gross_profit: sumQ('gross_profit'), ebit: sumQ('ebit'),
+        cogs: sumQ('cogs'), sellExp: sumQ('sellExp'), adminExp: sumQ('adminExp'), otherExp: sumQ('otherExp'),
+        finInc: sumQ('finInc'), finExp: sumQ('finExp'), tax: sumQ('tax'),
         cf_op: cfOp,
         cf_fcf: cfOp !== null && cfCap !== null ? cfOp + cfCap : null,
-        cf_net: sum('cf_net'),
-        eps: (() => { const vals = window4.map(q => q.eps); return vals.every(v => v !== null) ? vals.reduce((a,b) => a+b, 0) : null; })()
+        cf_net: sumQ('cf_net'),
+        eps: (() => { const vals = w4.map(q => q.eps); return vals.every(v => v !== null) ? vals.reduce((a,b)=>a+b,0) : null; })()
       });
     }
     return result;
@@ -264,17 +289,26 @@ function buildBalanceData() {
   }
 
   if (currentMode === 'ltm') {
-    const allQ = [
-      ...(bs21 ? [{ label: "Q4'21", bs: bs21, i: 4 }] : []),
-      { label: "Q4'22", bs: bs22, i: 4 },
-      { label: "Q1'23", bs: bs23, i: 1 }, { label: "Q2'23", bs: bs23, i: 2 },
-      { label: "Q3'23", bs: bs23, i: 3 }, { label: "Q4'23", bs: bs23, i: 4 },
-      { label: "Q1'24", bs: bs24, i: 1 }, { label: "Q2'24", bs: bs24, i: 2 },
-      { label: "Q3'24", bs: bs24, i: 3 }, { label: "Q4'24", bs: bs24, i: 4 },
-      { label: "Q1'25", bs: bs25, i: 1 }, { label: "Q2'25", bs: bs25, i: 2 },
-      { label: "Q3'25", bs: bs25, i: 3 }, { label: "Q4'25", bs: bs25, i: 4 }
+    // Annual year-end snapshots for 2021–2024
+    const annual = [
+      ...(bs21 ? [{ label: '2021', bs: bs21, i: 4 }] : []),
+      { label: '2022', bs: bs22, i: 4 },
+      { label: '2023', bs: bs23, i: 4 },
+      { label: '2024', bs: bs24, i: 4 },
     ];
-    return allQ.map(q => ({ label: 'LTM ' + q.label, ...extractBSPoint(q.bs, q.i) }));
+    // Latest available quarter snapshot (from bs25, or fall back to bs24)
+    const candidates = [
+      { label: "Q4'25", bs: bs25, i: 4 },
+      { label: "Q3'25", bs: bs25, i: 3 },
+      { label: "Q2'25", bs: bs25, i: 2 },
+      { label: "Q1'25", bs: bs25, i: 1 },
+      { label: "Q4'24", bs: bs24, i: 4 },
+    ];
+    const latestBS = candidates.find(c => c.bs?.assets?.total?.values?.[c.i] != null);
+    return [
+      ...annual.map(q => ({ label: q.label, ...extractBSPoint(q.bs, q.i) })),
+      ...(latestBS ? [{ label: `LTM ${latestBS.label}`, ...extractBSPoint(latestBS.bs, latestBS.i) }] : [])
+    ];
   }
   return [];
 }
@@ -1199,7 +1233,7 @@ function renderBVPSChart() {
   const bs22 = D.balance_sheet_2022;
   const bs23 = D.balance_sheet_2023;
 
-  if (currentMode === 'annual') {
+  if (currentMode === 'annual' || currentMode === 'ltm') {
     // 2021: compute from equity / shares (index 4 = Dec 2021)
     if (bs21) {
       const eq21 = bs21.equity.total.values[4];
