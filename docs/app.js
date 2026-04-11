@@ -2,13 +2,18 @@ let D = null;
 let currentMode = 'quarterly';
 let activeYears = new Set(['2022','2023','2024','2025']);
 const charts = {};
+const BGN_PER_EUR = 1.95583;
+const EUR_TRANSITION_YEAR = 2026;
+const DISPLAY_CURRENCY = 'EUR';
+const DISPLAY_AMOUNT_UNIT = 'хил. EUR';
+const DISPLAY_PER_SHARE_UNIT = DISPLAY_CURRENCY;
 
 function fmtNum(v, decimals = 0) {
   if (v === null || v === undefined || isNaN(v)) return '–';
   return v.toLocaleString('bg-BG', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
 
-function fmtBGN(v) {
+function fmtMoney(v) {
   if (v === null || v === undefined || isNaN(v)) return '–';
   const abs = Math.abs(v);
   if (abs >= 100000) {
@@ -16,6 +21,58 @@ function fmtBGN(v) {
     return (m >= 0 ? '' : '-') + Math.abs(m).toLocaleString('bg-BG', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' млн.';
   }
   return v.toLocaleString('bg-BG', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+function fmtBGN(v) {
+  return fmtMoney(v);
+}
+
+function fmtAmountCompact(v) {
+  if (v === null || v === undefined || isNaN(v)) return '–';
+  const abs = Math.abs(v);
+  if (abs >= 1000) {
+    const m = v / 1000;
+    return (m >= 0 ? '' : '-') + Math.abs(m).toLocaleString('bg-BG', {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1
+    }) + ` млн. ${DISPLAY_CURRENCY}`;
+  }
+  return v.toLocaleString('bg-BG', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }) + ` ${DISPLAY_AMOUNT_UNIT}`;
+}
+
+function fmtAmountTooltip(v, absolute = false) {
+  const value = absolute ? Math.abs(v) : v;
+  if (value === null || value === undefined || isNaN(value)) return '–';
+  return value.toLocaleString('bg-BG', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }) + ` ${DISPLAY_AMOUNT_UNIT}`;
+}
+
+function fmtPerShare(v, decimals = 2) {
+  if (v === null || v === undefined || isNaN(v)) return '–';
+  return v.toFixed(decimals) + ' ' + DISPLAY_PER_SHARE_UNIT;
+}
+
+function isEURSourceYear(year) {
+  return Number(year) >= EUR_TRANSITION_YEAR;
+}
+
+function convertMoneyValue(v, year) {
+  if (v === null || v === undefined || isNaN(v)) return v;
+  return isEURSourceYear(year) ? v : v / BGN_PER_EUR;
+}
+
+function convertMoneyArray(arr, year, length = 4) {
+  const values = arr || Array(length).fill(null);
+  return values.map(v => convertMoneyValue(v, year));
+}
+
+function getPeriodValues(container, prefix, year, length = 4) {
+  return convertMoneyArray(container?.[`${prefix}_${year}`], year, length);
 }
 
 function fmtPct(v, decimals = 1) {
@@ -45,13 +102,19 @@ function numCell(v, isMargin = false) {
 const YEARS = ['2021','2022','2023','2024','2025'];
 
 function getQuarterly(item, year) {
-  const key = year === '2024' ? 'quarterly_2024' : `quarterly_${year}`;
-  return item[key] || [null,null,null,null];
+  return getPeriodValues(item, 'quarterly', year);
 }
 
 function getYTD(item, year) {
-  const key = year === '2024' ? 'ytd_2024' : `ytd_${year}`;
-  return item[key] || [null,null,null,null];
+  return getPeriodValues(item, 'ytd', year);
+}
+
+function getEPSYTD(year) {
+  return getPeriodValues(D?.per_share?.eps_ytd, 'ytd', year);
+}
+
+function getEPSQuarterly(year) {
+  return getPeriodValues(D?.per_share?.eps_quarterly, 'quarterly', year);
 }
 
 function buildSeriesData() {
@@ -71,14 +134,16 @@ function buildSeriesData() {
       const finInc = getYTD(IS.financial_income, yr)[3];
       const finExp = Math.abs(getYTD(IS.financial_expenses, yr)[3]);
       const tax = Math.abs(getYTD(IS.tax, yr)[3]);
-      const cfOp = CF.operating.total[`ytd_${yr}`]?.[3] ?? null;
-      const cfCap = CF.investing.capex[`ytd_${yr}`]?.[3] ?? null;
-      const cfNet = CF.summary.net_change[`ytd_${yr}`]?.[3] ?? null;
-      const eps = D.per_share.eps_ytd[`ytd_${yr}`]?.[3] ?? null;
+      const cfOp = getPeriodValues(CF.operating.total, 'ytd', yr)[3] ?? null;
+      const cfCap = getPeriodValues(CF.investing.capex, 'ytd', yr)[3] ?? null;
+      const cfNet = getPeriodValues(CF.summary.net_change, 'ytd', yr)[3] ?? null;
+      const eps = getEPSYTD(yr)[3] ?? null;
       return { 
         label: yr, revenue: rev, net_profit: np, gross_profit: gp, ebit: eb,
         cogs, sellExp, adminExp, otherExp, finInc, finExp, tax,
-        cf_op: cfOp, cf_fcf: (cfOp !== null && cfCap !== null ? cfOp + cfCap : null), cf_net: cfNet, eps
+        cf_op: cfOp, cf_fcf: (cfOp !== null && cfCap !== null ? cfOp + cfCap : null), cf_net: cfNet, eps,
+        sourceYear: yr,
+        shareCount: getShareCountAnnual(yr)
       };
     });
   }
@@ -98,16 +163,16 @@ function buildSeriesData() {
       const finIncQ = getQuarterly(IS.financial_income, yr);
       const finExpQ = getQuarterly(IS.financial_expenses, yr).map(v => Math.abs(v));
       const taxQ = getQuarterly(IS.tax, yr).map(v => Math.abs(v));
-      const cfOpQ = CF.operating.total[`quarterly_${yr}`] || [null,null,null,null];
-      const cfCapYTD = CF.investing.capex[`ytd_${yr}`] || [null,null,null,null];
+      const cfOpQ = getPeriodValues(CF.operating.total, 'quarterly', yr);
+      const cfCapYTD = getPeriodValues(CF.investing.capex, 'ytd', yr);
       const cfCapQ = [
         cfCapYTD[0],
         cfCapYTD[1] !== null && cfCapYTD[0] !== null ? cfCapYTD[1] - cfCapYTD[0] : null,
         cfCapYTD[2] !== null && cfCapYTD[1] !== null ? cfCapYTD[2] - cfCapYTD[1] : null,
         cfCapYTD[3] !== null && cfCapYTD[2] !== null ? cfCapYTD[3] - cfCapYTD[2] : null,
       ];
-      const cfNetQ = CF.summary.net_change[`quarterly_${yr}`] || [null,null,null,null];
-      const epsQ = D.per_share.eps_quarterly?.[`quarterly_${yr}`] || null;
+      const cfNetQ = getPeriodValues(CF.summary.net_change, 'quarterly', yr);
+      const epsQ = getEPSQuarterly(yr);
       const qLabels = ['Q1','Q2','Q3','Q4'];
       for (let i = 0; i < 4; i++) {
         result.push({
@@ -118,7 +183,10 @@ function buildSeriesData() {
           cf_op: cfOpQ[i],
           cf_fcf: cfOpQ[i] !== null && cfCapQ[i] !== null ? cfOpQ[i] + cfCapQ[i] : null,
           cf_net: cfNetQ[i],
-          eps: epsQ ? epsQ[i] : null
+          eps: epsQ[i],
+          sourceYear: yr,
+          quarter: i + 1,
+          shareCount: getShareCount(yr, i + 1)
         });
       }
     }
@@ -140,14 +208,16 @@ function buildSeriesData() {
       const finInc  = getYTD(IS.financial_income, yr)[3];
       const finExp  = Math.abs(getYTD(IS.financial_expenses, yr)[3] ?? 0);
       const tax     = Math.abs(getYTD(IS.tax, yr)[3] ?? 0);
-      const cfOp  = CF.operating.total[`ytd_${yr}`]?.[3] ?? null;
-      const cfCap = CF.investing.capex[`ytd_${yr}`]?.[3] ?? null;
-      const cfNet = CF.summary.net_change[`ytd_${yr}`]?.[3] ?? null;
-      const eps   = D.per_share.eps_ytd[`ytd_${yr}`]?.[3] ?? null;
+      const cfOp  = getPeriodValues(CF.operating.total, 'ytd', yr)[3] ?? null;
+      const cfCap = getPeriodValues(CF.investing.capex, 'ytd', yr)[3] ?? null;
+      const cfNet = getPeriodValues(CF.summary.net_change, 'ytd', yr)[3] ?? null;
+      const eps   = getEPSYTD(yr)[3] ?? null;
       return {
         label: yr, revenue: rev, net_profit: np, gross_profit: gp, ebit: eb,
         cogs, sellExp, adminExp, otherExp, finInc, finExp, tax,
-        cf_op: cfOp, cf_fcf: (cfOp !== null && cfCap !== null ? cfOp + cfCap : null), cf_net: cfNet, eps
+        cf_op: cfOp, cf_fcf: (cfOp !== null && cfCap !== null ? cfOp + cfCap : null), cf_net: cfNet, eps,
+        sourceYear: yr,
+        shareCount: getShareCountAnnual(yr)
       };
     });
 
@@ -165,16 +235,16 @@ function buildSeriesData() {
       const finIncQ = getQuarterly(IS.financial_income, yr);
       const finExpQ = getQuarterly(IS.financial_expenses, yr).map(v => Math.abs(v ?? 0));
       const taxQ    = getQuarterly(IS.tax, yr).map(v => Math.abs(v ?? 0));
-      const cfOpQ   = CF.operating.total[`quarterly_${yr}`] || [null,null,null,null];
-      const cfCapYTD = CF.investing.capex[`ytd_${yr}`] || [null,null,null,null];
+      const cfOpQ   = getPeriodValues(CF.operating.total, 'quarterly', yr);
+      const cfCapYTD = getPeriodValues(CF.investing.capex, 'ytd', yr);
       const cfCapQ  = [
         cfCapYTD[0],
         cfCapYTD[1] !== null && cfCapYTD[0] !== null ? cfCapYTD[1] - cfCapYTD[0] : null,
         cfCapYTD[2] !== null && cfCapYTD[1] !== null ? cfCapYTD[2] - cfCapYTD[1] : null,
         cfCapYTD[3] !== null && cfCapYTD[2] !== null ? cfCapYTD[3] - cfCapYTD[2] : null,
       ];
-      const cfNetQ  = CF.summary.net_change[`quarterly_${yr}`] || [null,null,null,null];
-      const epsQ    = D.per_share.eps_quarterly?.[`quarterly_${yr}`] || null;
+      const cfNetQ  = getPeriodValues(CF.summary.net_change, 'quarterly', yr);
+      const epsQ    = getEPSQuarterly(yr);
       for (let i = 0; i < 4; i++) {
         if (revQ[i] !== null) {
           allQ.push({
@@ -183,7 +253,10 @@ function buildSeriesData() {
             cogs: cogsQ[i], sellExp: sellQ[i], adminExp: adminQ[i], otherExp: otherQ[i],
             finInc: finIncQ[i], finExp: finExpQ[i], tax: taxQ[i],
             cf_op: cfOpQ[i], cf_cap: cfCapQ[i], cf_net: cfNetQ[i],
-            eps: epsQ ? epsQ[i] : null
+            eps: epsQ[i],
+            sourceYear: yr,
+            quarter: i + 1,
+            shareCount: getShareCount(yr, i + 1)
           });
         }
       }
@@ -206,7 +279,10 @@ function buildSeriesData() {
         cf_op: cfOp,
         cf_fcf: cfOp !== null && cfCap !== null ? cfOp + cfCap : null,
         cf_net: sumQ('cf_net'),
-        eps: (() => { const vals = w4.map(q => q.eps); return vals.every(v => v !== null) ? vals.reduce((a,b)=>a+b,0) : null; })()
+        eps: (() => { const vals = w4.map(q => q.eps); return vals.every(v => v !== null) ? vals.reduce((a,b)=>a+b,0) : null; })(),
+        sourceYear: last.sourceYear,
+        quarter: last.quarter,
+        shareCount: last.shareCount
       });
     }
     return result;
@@ -214,7 +290,7 @@ function buildSeriesData() {
   return [];
 }
 
-function extractBSPoint(bs, i) {
+function extractBSPoint(bs, i, year) {
   const lc = bs.liabilities.current;
   const lnc = bs.liabilities.non_current;
   const bankLoansSt = (lc.bank_loans || lc.bank_loans_st || {}).values?.[i] || 0;
@@ -222,20 +298,21 @@ function extractBSPoint(bs, i) {
   const leaseSt = lc.lease_st?.values?.[i] || 0;
   const leaseLt = lnc.lease_lt?.values?.[i] || 0;
   return {
-    assets: bs.assets.total.values[i],
-    current_assets: bs.assets.current.total.values[i],
-    liabilities: bs.liabilities.total.values[i],
-    current_liabilities: lc.total.values[i],
-    equity: bs.equity.total.values[i],
-    cash: bs.assets.current.cash.values[i],
-    recv: bs.assets.current.trade_receivables.values[i],
-    re: bs.equity.retained_earnings.values[i],
-    inventories: bs.assets.current.inventories?.values?.[i] || 0,
-    bank_loans: bankLoansSt + bankLoansLt,
-    bank_loans_st: bankLoansSt,
-    lease_st: leaseSt,
-    lease_lt: leaseLt,
-    trade_payables: lc.trade_payables?.values?.[i] || 0,
+    assets: convertMoneyValue(bs.assets.total.values[i], year),
+    current_assets: convertMoneyValue(bs.assets.current.total.values[i], year),
+    liabilities: convertMoneyValue(bs.liabilities.total.values[i], year),
+    current_liabilities: convertMoneyValue(lc.total.values[i], year),
+    equity: convertMoneyValue(bs.equity.total.values[i], year),
+    cash: convertMoneyValue(bs.assets.current.cash.values[i], year),
+    recv: convertMoneyValue(bs.assets.current.trade_receivables.values[i], year),
+    re: convertMoneyValue(bs.equity.retained_earnings.values[i], year),
+    inventories: convertMoneyValue(bs.assets.current.inventories?.values?.[i] || 0, year),
+    bank_loans: convertMoneyValue(bankLoansSt + bankLoansLt, year),
+    bank_loans_st: convertMoneyValue(bankLoansSt, year),
+    lease_st: convertMoneyValue(leaseSt, year),
+    lease_lt: convertMoneyValue(leaseLt, year),
+    trade_payables: convertMoneyValue(lc.trade_payables?.values?.[i] || 0, year),
+    sourceYear: year,
   };
 }
 
@@ -248,11 +325,11 @@ function buildBalanceData() {
 
   if (currentMode === 'annual') {
     return [
-      ...(bs21 ? [{ label: '2021', ...extractBSPoint(bs21, 4) }] : []),
-      { label: '2022', ...extractBSPoint(bs22, 4) },
-      { label: '2023', ...extractBSPoint(bs23, 4) },
-      { label: '2024', ...extractBSPoint(bs24, 4) },
-      { label: '2025', ...extractBSPoint(bs25, 4) },
+      ...(bs21 ? [{ label: '2021', ...extractBSPoint(bs21, 4, '2021') }] : []),
+      { label: '2022', ...extractBSPoint(bs22, 4, '2022') },
+      { label: '2023', ...extractBSPoint(bs23, 4, '2023') },
+      { label: '2024', ...extractBSPoint(bs24, 4, '2024') },
+      { label: '2025', ...extractBSPoint(bs25, 4, '2025') },
     ];
   }
 
@@ -260,30 +337,30 @@ function buildBalanceData() {
     const result = [];
     const quarters = [
       ...(activeYears.has('2021') && bs21 ? [
-        { label: "Q1'21", bs: bs21, i: 1 },
-        { label: "Q2'21", bs: bs21, i: 2 },
-        { label: "Q3'21", bs: bs21, i: 3 },
-        { label: "Q4'21", bs: bs21, i: 4 }
+        { label: "Q1'21", bs: bs21, i: 1, year: '2021' },
+        { label: "Q2'21", bs: bs21, i: 2, year: '2021' },
+        { label: "Q3'21", bs: bs21, i: 3, year: '2021' },
+        { label: "Q4'21", bs: bs21, i: 4, year: '2021' }
       ] : []),
       ...(activeYears.has('2022') ? [
-        { label: "Q1'22", bs: bs22, i: 1 }, { label: "Q2'22", bs: bs22, i: 2 },
-        { label: "Q3'22", bs: bs22, i: 3 }, { label: "Q4'22", bs: bs22, i: 4 }
+        { label: "Q1'22", bs: bs22, i: 1, year: '2022' }, { label: "Q2'22", bs: bs22, i: 2, year: '2022' },
+        { label: "Q3'22", bs: bs22, i: 3, year: '2022' }, { label: "Q4'22", bs: bs22, i: 4, year: '2022' }
       ] : []),
       ...(activeYears.has('2023') ? [
-        { label: "Q1'23", bs: bs23, i: 1 }, { label: "Q2'23", bs: bs23, i: 2 },
-        { label: "Q3'23", bs: bs23, i: 3 }, { label: "Q4'23", bs: bs23, i: 4 }
+        { label: "Q1'23", bs: bs23, i: 1, year: '2023' }, { label: "Q2'23", bs: bs23, i: 2, year: '2023' },
+        { label: "Q3'23", bs: bs23, i: 3, year: '2023' }, { label: "Q4'23", bs: bs23, i: 4, year: '2023' }
       ] : []),
       ...(activeYears.has('2024') ? [
-        { label: "Q1'24", bs: bs24, i: 1 }, { label: "Q2'24", bs: bs24, i: 2 },
-        { label: "Q3'24", bs: bs24, i: 3 }, { label: "Q4'24", bs: bs24, i: 4 }
+        { label: "Q1'24", bs: bs24, i: 1, year: '2024' }, { label: "Q2'24", bs: bs24, i: 2, year: '2024' },
+        { label: "Q3'24", bs: bs24, i: 3, year: '2024' }, { label: "Q4'24", bs: bs24, i: 4, year: '2024' }
       ] : []),
       ...(activeYears.has('2025') ? [
-        { label: "Q1'25", bs: bs25, i: 1 }, { label: "Q2'25", bs: bs25, i: 2 },
-        { label: "Q3'25", bs: bs25, i: 3 }, { label: "Q4'25", bs: bs25, i: 4 }
+        { label: "Q1'25", bs: bs25, i: 1, year: '2025' }, { label: "Q2'25", bs: bs25, i: 2, year: '2025' },
+        { label: "Q3'25", bs: bs25, i: 3, year: '2025' }, { label: "Q4'25", bs: bs25, i: 4, year: '2025' }
       ] : []),
     ];
     for (const q of quarters) {
-      result.push({ label: q.label, ...extractBSPoint(q.bs, q.i) });
+      result.push({ label: q.label, ...extractBSPoint(q.bs, q.i, q.year) });
     }
     return result;
   }
@@ -298,16 +375,16 @@ function buildBalanceData() {
     ];
     // Latest available quarter snapshot (from bs25, or fall back to bs24)
     const candidates = [
-      { label: "Q4'25", bs: bs25, i: 4 },
-      { label: "Q3'25", bs: bs25, i: 3 },
-      { label: "Q2'25", bs: bs25, i: 2 },
-      { label: "Q1'25", bs: bs25, i: 1 },
-      { label: "Q4'24", bs: bs24, i: 4 },
+      { label: "Q4'25", bs: bs25, i: 4, year: '2025' },
+      { label: "Q3'25", bs: bs25, i: 3, year: '2025' },
+      { label: "Q2'25", bs: bs25, i: 2, year: '2025' },
+      { label: "Q1'25", bs: bs25, i: 1, year: '2025' },
+      { label: "Q4'24", bs: bs24, i: 4, year: '2024' },
     ];
     const latestBS = candidates.find(c => c.bs?.assets?.total?.values?.[c.i] != null);
     return [
-      ...annual.map(q => ({ label: q.label, ...extractBSPoint(q.bs, q.i) })),
-      ...(latestBS ? [{ label: `LTM ${latestBS.label}`, ...extractBSPoint(latestBS.bs, latestBS.i) }] : [])
+      ...annual.map(q => ({ label: q.label, ...extractBSPoint(q.bs, q.i, q.label) })),
+      ...(latestBS ? [{ label: `LTM ${latestBS.label}`, ...extractBSPoint(latestBS.bs, latestBS.i, latestBS.year) }] : [])
     ];
   }
   return [];
@@ -373,14 +450,14 @@ function updateKPIs(series) {
   const last = series[series.length - 1];
   const prev = series.length >= 2 ? series[series.length - 2] : null;
 
-  document.getElementById('kpi-revenue').textContent = fmtBGN(last?.revenue);
+  document.getElementById('kpi-revenue').textContent = fmtAmountCompact(last?.revenue);
   if (prev && prev.revenue && last.revenue) {
     const ch = (last.revenue - prev.revenue) / Math.abs(prev.revenue) * 100;
     document.getElementById('kpi-revenue-yoy').innerHTML = yoySpan(ch) + ' г/г';
   }
   document.getElementById('kpi-revenue-period').textContent = last?.label || '';
 
-  document.getElementById('kpi-netprofit').textContent = fmtBGN(last?.net_profit);
+  document.getElementById('kpi-netprofit').textContent = fmtAmountCompact(last?.net_profit);
   if (prev && prev.net_profit && last.net_profit) {
     const ch = (last.net_profit - prev.net_profit) / Math.abs(prev.net_profit) * 100;
     document.getElementById('kpi-netprofit-yoy').innerHTML = yoySpan(ch) + ' г/г';
@@ -391,13 +468,13 @@ function updateKPIs(series) {
   document.getElementById('kpi-ebitmargin').textContent = ebitM !== null ? fmtPct(ebitM) : '–';
   if (last && last.revenue && last.ebit !== null) {
     const cls = ebitM >= 0 ? 'positive' : 'negative';
-    document.getElementById('kpi-ebitmargin-sub').innerHTML = `<span class="${cls}">EBIT: ${fmtBGN(last.ebit)}</span>`;
+    document.getElementById('kpi-ebitmargin-sub').innerHTML = `<span class="${cls}">EBIT: ${fmtAmountCompact(last.ebit)}</span>`;
   }
   document.getElementById('kpi-ebitmargin-period').textContent = last?.label || '';
 
-  const eps25 = D.per_share.eps_ytd.ytd_2025[3];
-  const eps24 = D.per_share.eps_ytd.ytd_2024[3];
-  document.getElementById('kpi-eps').textContent = eps25 !== null ? eps25.toFixed(2) + ' лв.' : '–';
+  const eps25 = getEPSYTD('2025')[3];
+  const eps24 = getEPSYTD('2024')[3];
+  document.getElementById('kpi-eps').textContent = eps25 !== null ? fmtPerShare(eps25) : '–';
   if (eps25 && eps24) {
     const ch = (eps25 - eps24) / Math.abs(eps24) * 100;
     document.getElementById('kpi-eps-yoy').innerHTML = yoySpan(ch) + ' г/г';
@@ -423,7 +500,7 @@ function renderRevenueChart(series) {
       ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
       plugins: {
         ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtBGN(ctx.parsed.y)} хил.` } }
+        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtAmountTooltip(ctx.parsed.y)}` } }
       },
       scales: {
         x: { grid: { display: false }, ticks: { font: { size: 10 } } },
@@ -481,7 +558,7 @@ function renderExpenseBreakdownChart(series) {
       ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
       plugins: {
         ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtBGN(Math.abs(ctx.parsed.y))} хил.` } }
+        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtAmountTooltip(ctx.parsed.y, true)}` } }
       },
       scales: {
         x: { stacked: true, grid: { display: false }, ticks: { font: { size: 10 } } },
@@ -507,7 +584,7 @@ function renderCashflowChart(series) {
       ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
       plugins: {
         ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtBGN(ctx.parsed.y)} хил.` } }
+        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtAmountTooltip(ctx.parsed.y)}` } }
       },
       scales: {
         x: { grid: { display: false }, ticks: { font: { size: 10 } } },
@@ -527,7 +604,7 @@ function renderFCFChart(series) {
     data: {
       labels,
       datasets: [{
-        label: 'FCF (хил. BGN)',
+        label: `FCF (${DISPLAY_AMOUNT_UNIT})`,
         data: fcf,
         backgroundColor: fcf.map(v => v !== null && v >= 0 ? CHART_COLORS.greenA : CHART_COLORS.redA),
         borderColor: fcf.map(v => v !== null && v >= 0 ? CHART_COLORS.green : CHART_COLORS.red),
@@ -539,7 +616,7 @@ function renderFCFChart(series) {
       ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
       plugins: {
         ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` FCF: ${fmtBGN(ctx.parsed.y)} хил.` } }
+        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` FCF: ${fmtAmountTooltip(ctx.parsed.y)}` } }
       },
       scales: {
         x: { grid: { display: false }, ticks: { font: { size: 10 } } },
@@ -636,7 +713,7 @@ function renderBalanceChart(bsData) {
       ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
       plugins: {
         ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtBGN(ctx.parsed.y)} хил.`, footer: items => `Общо активи: ${fmtBGN(items.reduce((a,i) => a+(i.parsed.y||0), 0))} хил.` } }
+        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtAmountTooltip(ctx.parsed.y)}`, footer: items => `Общо активи: ${fmtAmountTooltip(items.reduce((a,i) => a + (i.parsed.y || 0), 0))}` } }
       },
       scales: {
         x: { stacked: true, grid: { display: false }, ticks: { font: { size: 10 } } },
@@ -662,7 +739,7 @@ function renderAssetGrowthChart(bsData) {
       ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
       plugins: {
         ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtBGN(ctx.parsed.y)} хил.` } }
+        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtAmountTooltip(ctx.parsed.y)}` } }
       },
       scales: {
         x: { grid: { display: false }, ticks: { font: { size: 10 } } },
@@ -829,7 +906,7 @@ function renderSeasonalityChart() {
       ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
       plugins: {
         ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtBGN(ctx.parsed.y)} хил.` } }
+        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtAmountTooltip(ctx.parsed.y)}` } }
       },
       scales: {
         x: { grid: { display: false }, ticks: { font: { size: 10 } } },
@@ -841,32 +918,27 @@ function renderSeasonalityChart() {
 
 function renderEPSvsFCFChart(series) {
   const labels = series.map(s => s.label);
-  const shares = 18000000;
-  
-  const epsData = currentMode === 'annual' 
-    ? YEARS.map(yr => D.per_share.eps_ytd[`ytd_${yr}`]?.[3] ?? null)
-    : series.map(s => s.eps);
-  
-  const fcfPerShare = series.map(s => s.cf_fcf !== null ? s.cf_fcf / shares : null);
+  const epsData = series.map(s => s.eps);
+  const fcfPerShare = series.map(s => s.cf_fcf !== null && s.shareCount ? (s.cf_fcf * 1000) / s.shareCount : null);
 
   mkChart('chart-eps-fcf', {
     type: 'bar',
     data: {
       labels,
       datasets: [
-        { label: 'EPS (лв.)', data: epsData, backgroundColor: CHART_COLORS.navyA, borderColor: CHART_COLORS.navy, borderWidth: 1.5, borderRadius: 4 },
-        { label: 'FCF/акция (лв.)', data: fcfPerShare, backgroundColor: CHART_COLORS.tealA, borderColor: CHART_COLORS.teal, borderWidth: 1.5, borderRadius: 4 }
+        { label: `EPS (${DISPLAY_PER_SHARE_UNIT})`, data: epsData, backgroundColor: CHART_COLORS.navyA, borderColor: CHART_COLORS.navy, borderWidth: 1.5, borderRadius: 4 },
+        { label: `FCF/акция (${DISPLAY_PER_SHARE_UNIT})`, data: fcfPerShare, backgroundColor: CHART_COLORS.tealA, borderColor: CHART_COLORS.teal, borderWidth: 1.5, borderRadius: 4 }
       ]
     },
     options: {
       ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
       plugins: {
         ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(2)} лв.` } }
+        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtPerShare(ctx.parsed.y)}` } }
       },
       scales: {
         x: { grid: { display: false }, ticks: { font: { size: 10 } } },
-        y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => v.toFixed(2) + ' лв.' } }
+        y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => fmtPerShare(v) } }
       }
     }
   });
@@ -1015,7 +1087,7 @@ function renderDividendsChart() {
   const years = ['2022', '2023', '2024', '2025'];
   const divAbs = years.map(yr => {
     const ytd = divItem[`ytd_${yr}`] || divItem[`ytd_${yr}_original`];
-    return ytd ? Math.abs(ytd[3]) : 0;
+    return ytd ? convertMoneyValue(Math.abs(ytd[3]), yr) : 0;
   });
 
   mkChart('chart-dividends', {
@@ -1023,7 +1095,7 @@ function renderDividendsChart() {
     data: {
       labels: years,
       datasets: [{
-        label: 'Дивиденти (хил. BGN)',
+        label: `Дивиденти (${DISPLAY_AMOUNT_UNIT})`,
         data: divAbs,
         backgroundColor: CHART_COLORS.greenA,
         borderColor: CHART_COLORS.green,
@@ -1035,7 +1107,7 @@ function renderDividendsChart() {
       ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
       plugins: {
         ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${fmtBGN(ctx.parsed.y)} хил.` } }
+        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${fmtAmountTooltip(ctx.parsed.y)}` } }
       },
       scales: {
         x: { grid: { display: false }, ticks: { font: { size: 10 } } },
@@ -1050,7 +1122,7 @@ function renderDividendPerShareChart() {
   const years = ['2022', '2023', '2024', '2025'];
   const dps = years.map(yr => {
     const ytd = divItem[`ytd_${yr}`] || divItem[`ytd_${yr}_original`];
-    const div = ytd ? Math.abs(ytd[3]) : 0;
+    const div = ytd ? convertMoneyValue(Math.abs(ytd[3]), yr) : 0;
     const shares = getShareCountAnnual(yr);
     return div > 0 ? (div * 1000) / shares : 0;
   });
@@ -1060,7 +1132,7 @@ function renderDividendPerShareChart() {
     data: {
       labels: years,
       datasets: [{
-        label: 'Дивидент/акция (лв.)',
+        label: `Дивидент/акция (${DISPLAY_PER_SHARE_UNIT})`,
         data: dps,
         backgroundColor: CHART_COLORS.navyA,
         borderColor: CHART_COLORS.navy,
@@ -1072,11 +1144,11 @@ function renderDividendPerShareChart() {
       ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
       plugins: {
         ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${ctx.parsed.y?.toFixed(2)} лв./акция` } }
+        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${fmtPerShare(ctx.parsed.y)}/акция` } }
       },
       scales: {
         x: { grid: { display: false }, ticks: { font: { size: 10 } } },
-        y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => v.toFixed(2) + ' лв.' }, beginAtZero: true }
+        y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => fmtPerShare(v) }, beginAtZero: true }
       }
     }
   });
@@ -1088,7 +1160,7 @@ function renderPayoutRatioChart() {
   const years = ['2022', '2023', '2024', '2025'];
   const payout = years.map(yr => {
     const ytd = divItem[`ytd_${yr}`] || divItem[`ytd_${yr}_original`];
-    const div = ytd ? Math.abs(ytd[3]) : 0;
+    const div = ytd ? convertMoneyValue(Math.abs(ytd[3]), yr) : 0;
     const np = getYTD(IS.net_profit, yr)[3];
     return (div > 0 && np > 0) ? (div / np * 100) : null;
   });
@@ -1188,7 +1260,7 @@ function renderNetDebtChart(bsData) {
       labels,
       datasets: [
         {
-          label: 'Нетен дълг (хил. BGN)',
+          label: `Нетен дълг (${DISPLAY_AMOUNT_UNIT})`,
           data: netDebt,
           backgroundColor: netDebt.map(v => v >= 0 ? CHART_COLORS.redA : CHART_COLORS.greenA),
           borderColor: netDebt.map(v => v >= 0 ? CHART_COLORS.red : CHART_COLORS.green),
@@ -1210,14 +1282,14 @@ function renderNetDebtChart(bsData) {
         ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
         tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: {
           label: ctx => {
-            if (ctx.datasetIndex === 0) return ` Нетен дълг: ${fmtBGN(ctx.parsed.y)} хил.`;
+            if (ctx.datasetIndex === 0) return ` Нетен дълг: ${fmtAmountTooltip(ctx.parsed.y)}`;
             return ` D/E: ${ctx.parsed.y?.toFixed(2)}`;
           }
         }}
       },
       scales: {
         x: { grid: { display: false }, ticks: { font: { size: 10 } } },
-        y: { position: 'left', grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => fmtBGN(v) }, title: { display: true, text: 'хил. BGN', font: { size: 10 } } },
+        y: { position: 'left', grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => fmtBGN(v) }, title: { display: true, text: DISPLAY_AMOUNT_UNIT, font: { size: 10 } } },
         y2: { position: 'right', grid: { display: false }, ticks: { font: { size: 10 }, callback: v => v.toFixed(2) }, title: { display: true, text: 'D/E', font: { size: 10 } }, beginAtZero: true }
       }
     }
@@ -1238,54 +1310,54 @@ function renderBVPSChart() {
     if (bs21) {
       const eq21 = bs21.equity.total.values[4];
       labels.push('2021');
-      values.push(eq21 ? (eq21 * 1000) / getShareCountAnnual('2021') : null);
+      values.push(eq21 ? convertMoneyValue((eq21 * 1000) / getShareCountAnnual('2021'), '2021') : null);
     }
     // 2022: index 4 = Dec 2022
     if (bs22) {
       const eq22 = bs22.equity.total.values[4];
       labels.push('2022');
-      values.push(eq22 ? (eq22 * 1000) / getShareCountAnnual('2022') : null);
+      values.push(eq22 ? convertMoneyValue((eq22 * 1000) / getShareCountAnnual('2022'), '2022') : null);
     }
     // 2023: index 4 = Dec 2023
     if (bs23) {
       const eq23 = bs23.equity.total.values[4];
       labels.push('2023');
-      values.push(eq23 ? (eq23 * 1000) / getShareCountAnnual('2023') : null);
+      values.push(eq23 ? convertMoneyValue((eq23 * 1000) / getShareCountAnnual('2023'), '2023') : null);
     }
     // 2024: use original year-end value (index 4)
     if (bvps.values_2024_original) {
       labels.push('2024');
-      values.push(bvps.values_2024_original[4]);
+      values.push(convertMoneyValue(bvps.values_2024_original[4], '2024'));
     }
     // 2025: year-end value (index 4)
     if (bvps.values) {
       labels.push('2025');
-      values.push(bvps.values[4]);
+      values.push(convertMoneyValue(bvps.values[4], '2025'));
     }
   } else {
     // Quarterly / LTM: show all quarters
     for (let i = 1; i <= 4; i++) {
       labels.push(`Q${i}'22`);
       const eq = bs22.equity.total.values[i];
-      values.push(eq ? (eq * 1000) / getShareCount('2022', i) : null);
+      values.push(eq ? convertMoneyValue((eq * 1000) / getShareCount('2022', i), '2022') : null);
     }
     for (let i = 1; i <= 4; i++) {
       labels.push(`Q${i}'23`);
       const eq = bs23.equity.total.values[i];
-      values.push(eq ? (eq * 1000) / getShareCount('2023', i) : null);
+      values.push(eq ? convertMoneyValue((eq * 1000) / getShareCount('2023', i), '2023') : null);
     }
     // 2024 from values_2024_original
     if (bvps.values_2024_original) {
       for (let i = 1; i <= 4; i++) {
         labels.push(`Q${i}'24`);
-        values.push(bvps.values_2024_original[i]);
+        values.push(convertMoneyValue(bvps.values_2024_original[i], '2024'));
       }
     }
     // 2025 from values
     if (bvps.values) {
       for (let i = 1; i <= 4; i++) {
         labels.push(`Q${i}'25`);
-        values.push(bvps.values[i]);
+        values.push(convertMoneyValue(bvps.values[i], '2025'));
       }
     }
   }
@@ -1295,7 +1367,7 @@ function renderBVPSChart() {
     data: {
       labels,
       datasets: [{
-        label: 'BVPS (лв.)',
+        label: `BVPS (${DISPLAY_PER_SHARE_UNIT})`,
         data: values,
         borderColor: CHART_COLORS.navy,
         backgroundColor: CHART_COLORS.navyA,
@@ -1309,11 +1381,11 @@ function renderBVPSChart() {
       ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
       plugins: {
         ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` BVPS: ${ctx.parsed.y?.toFixed(2)} лв.` } }
+        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` BVPS: ${fmtPerShare(ctx.parsed.y)}` } }
       },
       scales: {
         x: { grid: { display: false }, ticks: { font: { size: 10 } } },
-        y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => v.toFixed(1) + ' лв.' } }
+        y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => fmtPerShare(v, 1) } }
       }
     }
   });
@@ -1330,21 +1402,21 @@ function renderCashFlowTable(series) {
   if (currentMode === 'annual') {
     tableData = YEARS.map(yr => ({
       label: yr,
-      cfOp: CF.operating.total[`ytd_${yr}`]?.[3] ?? null,
-      cfInv: CF.investing.total[`ytd_${yr}`]?.[3] ?? null,
-      cfFin: CF.financing.total[`ytd_${yr}`]?.[3] ?? null,
-      cfNet: CF.summary.net_change[`ytd_${yr}`]?.[3] ?? null,
-      capex: CF.investing.capex[`ytd_${yr}`]?.[3] ?? null,
+      cfOp: getPeriodValues(CF.operating.total, 'ytd', yr)[3] ?? null,
+      cfInv: getPeriodValues(CF.investing.total, 'ytd', yr)[3] ?? null,
+      cfFin: getPeriodValues(CF.financing.total, 'ytd', yr)[3] ?? null,
+      cfNet: getPeriodValues(CF.summary.net_change, 'ytd', yr)[3] ?? null,
+      capex: getPeriodValues(CF.investing.capex, 'ytd', yr)[3] ?? null,
     }));
   } else if (currentMode === 'quarterly') {
     tableData = [];
     for (const yr of YEARS) {
       if (!activeYears.has(yr)) continue;
-      const opQ = CF.operating.total[`quarterly_${yr}`] || [null,null,null,null];
-      const invQ = CF.investing.total[`quarterly_${yr}`] || [null,null,null,null];
-      const finQ = CF.financing.total[`quarterly_${yr}`] || [null,null,null,null];
-      const netQ = CF.summary.net_change[`quarterly_${yr}`] || [null,null,null,null];
-      const capYTD = CF.investing.capex[`ytd_${yr}`] || [null,null,null,null];
+      const opQ = getPeriodValues(CF.operating.total, 'quarterly', yr);
+      const invQ = getPeriodValues(CF.investing.total, 'quarterly', yr);
+      const finQ = getPeriodValues(CF.financing.total, 'quarterly', yr);
+      const netQ = getPeriodValues(CF.summary.net_change, 'quarterly', yr);
+      const capYTD = getPeriodValues(CF.investing.capex, 'ytd', yr);
       const capQ = [
         capYTD[0],
         capYTD[1] !== null && capYTD[0] !== null ? capYTD[1] - capYTD[0] : null,
@@ -1429,6 +1501,11 @@ function exportCSV() {
   const series = buildSeriesData();
   const bsData = buildBalanceData();
   const rows = [];
+
+  rows.push(['Валута на визуализация', 'EUR']);
+  rows.push(['Курс за периоди до 2025', BGN_PER_EUR]);
+  rows.push(['Бележка', 'Данните до 31.12.2025 са конвертирани от BGN, а данните от 2026 нататък се приемат в EUR.']);
+  rows.push([]);
 
   // Header
   const headers = ['Показател', ...series.map(s => s.label)];
