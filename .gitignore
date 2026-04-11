@@ -3,3 +3,6 @@
 # macOS system files
 .DS_Store
 
+# Source PDFs (not part of the project)
+source_pdfs/
+

@@ -42,7 +42,7 @@ function numCell(v, isMargin = false) {
   return `<td class="${cls}">${text}</td>`;
 }
 
-const YEARS = ['2022','2023','2024','2025'];
+const YEARS = ['2021','2022','2023','2024','2025'];
 
 function getQuarterly(item, year) {
   const key = year === '2024' ? 'quarterly_2024' : `quarterly_${year}`;
@@ -215,6 +215,7 @@ function extractBSPoint(bs, i) {
 }
 
 function buildBalanceData() {
+  const bs21 = D.balance_sheet_2021;
   const bs22 = D.balance_sheet_2022;
   const bs23 = D.balance_sheet_2023;
   const bs24 = D.balance_sheet_2024_original;
@@ -222,6 +223,7 @@ function buildBalanceData() {
 
   if (currentMode === 'annual') {
     return [
+      ...(bs21 ? [{ label: '2021', ...extractBSPoint(bs21, 4) }] : []),
       { label: '2022', ...extractBSPoint(bs22, 4) },
       { label: '2023', ...extractBSPoint(bs23, 4) },
       { label: '2024', ...extractBSPoint(bs24, 4) },
@@ -232,6 +234,12 @@ function buildBalanceData() {
   if (currentMode === 'quarterly') {
     const result = [];
     const quarters = [
+      ...(activeYears.has('2021') && bs21 ? [
+        { label: "Q1'21", bs: bs21, i: 1 },
+        { label: "Q2'21", bs: bs21, i: 2 },
+        { label: "Q3'21", bs: bs21, i: 3 },
+        { label: "Q4'21", bs: bs21, i: 4 }
+      ] : []),
       ...(activeYears.has('2022') ? [
         { label: "Q1'22", bs: bs22, i: 1 }, { label: "Q2'22", bs: bs22, i: 2 },
         { label: "Q3'22", bs: bs22, i: 3 }, { label: "Q4'22", bs: bs22, i: 4 }
@@ -257,6 +265,7 @@ function buildBalanceData() {
 
   if (currentMode === 'ltm') {
     const allQ = [
+      ...(bs21 ? [{ label: "Q4'21", bs: bs21, i: 4 }] : []),
       { label: "Q4'22", bs: bs22, i: 4 },
       { label: "Q1'23", bs: bs23, i: 1 }, { label: "Q2'23", bs: bs23, i: 2 },
       { label: "Q3'23", bs: bs23, i: 3 }, { label: "Q4'23", bs: bs23, i: 4 },
@@ -1186,31 +1195,64 @@ function renderBVPSChart() {
   const labels = [];
   const values = [];
 
-  // 2022 and 2023: compute from equity / shares
+  const bs21 = D.balance_sheet_2021;
   const bs22 = D.balance_sheet_2022;
   const bs23 = D.balance_sheet_2023;
-  for (let i = 1; i <= 4; i++) {
-    labels.push(`Q${i}'22`);
-    const eq = bs22.equity.total.values[i];
-    values.push(eq ? (eq * 1000) / getShareCount('2022', i) : null);
-  }
-  for (let i = 1; i <= 4; i++) {
-    labels.push(`Q${i}'23`);
-    const eq = bs23.equity.total.values[i];
-    values.push(eq ? (eq * 1000) / getShareCount('2023', i) : null);
-  }
-  // 2024 from values_2024_original
-  if (bvps.values_2024_original) {
-    for (let i = 1; i <= 4; i++) {
-      labels.push(`Q${i}'24`);
-      values.push(bvps.values_2024_original[i]);
+
+  if (currentMode === 'annual') {
+    // 2021: compute from equity / shares (index 4 = Dec 2021)
+    if (bs21) {
+      const eq21 = bs21.equity.total.values[4];
+      labels.push('2021');
+      values.push(eq21 ? (eq21 * 1000) / getShareCountAnnual('2021') : null);
     }
-  }
-  // 2025 from values
-  if (bvps.values) {
+    // 2022: index 4 = Dec 2022
+    if (bs22) {
+      const eq22 = bs22.equity.total.values[4];
+      labels.push('2022');
+      values.push(eq22 ? (eq22 * 1000) / getShareCountAnnual('2022') : null);
+    }
+    // 2023: index 4 = Dec 2023
+    if (bs23) {
+      const eq23 = bs23.equity.total.values[4];
+      labels.push('2023');
+      values.push(eq23 ? (eq23 * 1000) / getShareCountAnnual('2023') : null);
+    }
+    // 2024: use original year-end value (index 4)
+    if (bvps.values_2024_original) {
+      labels.push('2024');
+      values.push(bvps.values_2024_original[4]);
+    }
+    // 2025: year-end value (index 4)
+    if (bvps.values) {
+      labels.push('2025');
+      values.push(bvps.values[4]);
+    }
+  } else {
+    // Quarterly / LTM: show all quarters
     for (let i = 1; i <= 4; i++) {
-      labels.push(`Q${i}'25`);
-      values.push(bvps.values[i]);
+      labels.push(`Q${i}'22`);
+      const eq = bs22.equity.total.values[i];
+      values.push(eq ? (eq * 1000) / getShareCount('2022', i) : null);
+    }
+    for (let i = 1; i <= 4; i++) {
+      labels.push(`Q${i}'23`);
+      const eq = bs23.equity.total.values[i];
+      values.push(eq ? (eq * 1000) / getShareCount('2023', i) : null);
+    }
+    // 2024 from values_2024_original
+    if (bvps.values_2024_original) {
+      for (let i = 1; i <= 4; i++) {
+        labels.push(`Q${i}'24`);
+        values.push(bvps.values_2024_original[i]);
+      }
+    }
+    // 2025 from values
+    if (bvps.values) {
+      for (let i = 1; i <= 4; i++) {
+        labels.push(`Q${i}'25`);
+        values.push(bvps.values[i]);
+      }
     }
   }
 
@@ -1475,22 +1517,30 @@ async function init() {
   try {
     const years = ['2022', '2023', '2024', '2025'];
     const quarters = ['Q1', 'Q2', 'Q3', 'Q4'];
-    
+
     const filePromises = [];
     for (const year of years) {
       for (const q of quarters) {
         filePromises.push(fetch(`./data/shelly_group_${year}_${q}.json`));
       }
     }
-    
+
     const responses = await Promise.all(filePromises);
     const failedFiles = responses.filter(r => !r.ok);
     if (failedFiles.length > 0) {
       throw new Error(`Failed to load ${failedFiles.length} quarterly files`);
     }
-    
+
     const jsonPromises = responses.map(r => r.json());
     const allData = await Promise.all(jsonPromises);
+
+    // Load 2021 Q4 file separately (only Q4 exists)
+    try {
+      const resp2021 = await fetch('./data/shelly_group_2021_Q4.json');
+      if (resp2021.ok) allData.push(await resp2021.json());
+    } catch (e) {
+      console.warn('2021 Q4 data not available:', e);
+    }
     
     D = {};
     for (const data of allData) {

@@ -1,0 +1,422 @@
+{
+  "meta": {
+    "company": "ОЛТЕРКО АД",
+    "company_en": "Allterco JSCo",
+    "eik": "201047670",
+    "currency": "BGN",
+    "unit": "thousands",
+    "accounting_standard": "МСФО / IFRS",
+    "source_documents": [
+      {
+        "quarter": "FY 2021",
+        "title": "Консолидиран финансов отчет",
+        "date": "2021-12-31",
+        "company": "ALLTERCO JSCo",
+        "file": "q4-2021.pdf"
+      }
+    ],
+    "notes": {
+      "income_statement": "Данни от годишния отчет за 2021 г. (Q4 / FY). Тримесечни данни за Q1-Q3 не са включени в този файл.",
+      "cash_flows": "Данни от годишния отчет за 2021 г. Само FY (пълна година).",
+      "balance_sheet": "Балансовите данни са от годишния отчет. Индекс 0 = 31 дек 2020, индекс 4 = 31 дек 2021. Индекси 1–3 са null (не са налични от Q4 отчета)."
+    },
+    "generated_at": "2026-04-11"
+  },
+  "income_statement": {
+    "ytd": {
+      "2021": {
+        "labels": ["Q1 2021 (3M)", "H1 2021 (6M)", "9M 2021", "FY 2021 (12M)"],
+        "dates": ["2021-03-31", "2021-06-30", "2021-09-30", "2021-12-31"],
+        "months": [3, 6, 9, 12]
+      }
+    },
+    "quarterly_labels": {
+      "2021": ["Q1 2021", "Q2 2021", "Q3 2021", "Q4 2021"]
+    },
+    "items": {
+      "revenue": {
+        "ytd_2021": [null, null, null, 59503]
+      },
+      "cogs": {
+        "ytd_2021": [null, null, null, -28566]
+      },
+      "gross_profit": {
+        "ytd_2021": [null, null, null, 30937]
+      },
+      "other_operating_income": {
+        "ytd_2021": [null, null, null, 1250]
+      },
+      "selling_expenses": {
+        "ytd_2021": [null, null, null, -567]
+      },
+      "admin_expenses": {
+        "ytd_2021": [null, null, null, -11595]
+      },
+      "other_operating_expenses": {
+        "ytd_2021": [null, null, null, -2023]
+      },
+      "ebit": {
+        "ytd_2021": [null, null, null, 18002]
+      },
+      "financial_income": {
+        "ytd_2021": [null, null, null, 495]
+      },
+      "financial_expenses": {
+        "ytd_2021": [null, null, null, -221]
+      },
+      "associates_share": {
+        "ytd_2021": [null, null, null, 32]
+      },
+      "ebt": {
+        "ytd_2021": [null, null, null, 18308]
+      },
+      "tax": {
+        "ytd_2021": [null, null, null, -2760]
+      },
+      "net_profit_continuing": {
+        "ytd_2021": [null, null, null, 15548]
+      },
+      "net_profit_discontinued": {
+        "ytd_2021": [null, null, null, 0]
+      },
+      "net_profit": {
+        "ytd_2021": [null, null, null, 15548]
+      },
+      "oci_fx": {
+        "ytd_2021": [null, null, null, -41]
+      },
+      "total_comprehensive_income": {
+        "ytd_2021": [null, null, null, 11934]
+      }
+    }
+  },
+  "cash_flows": {
+    "ytd": {
+      "2021": {
+        "labels": ["Q1 2021 (3M)", "H1 2021 (6M)", "9M 2021", "FY 2021 (12M)"],
+        "dates": ["2021-03-31", "2021-06-30", "2021-09-30", "2021-12-31"],
+        "months": [3, 6, 9, 12]
+      }
+    },
+    "items": {
+      "operating": {
+        "receipts_customers": {
+          "ytd_2021": [null, null, null, 57364]
+        },
+        "payments_suppliers": {
+          "ytd_2021": [null, null, null, -36973]
+        },
+        "taxes_net": {
+          "ytd_2021": [null, null, null, -5305]
+        },
+        "employee_payments": {
+          "ytd_2021": [null, null, null, -6972]
+        },
+        "bank_fees": {
+          "ytd_2021": [null, null, null, 0]
+        },
+        "other_net": {
+          "ytd_2021": [null, null, null, 10]
+        },
+        "total": {
+          "ytd_2021": [null, null, null, 8124]
+        }
+      },
+      "investing": {
+        "capex": {
+          "ytd_2021": [null, null, null, -1583]
+        },
+        "proceeds_ppe_sale": {
+          "ytd_2021": [null, null, null, 44]
+        },
+        "proceeds_investments": {
+          "ytd_2021": [null, null, null, 2054]
+        },
+        "investment_acquisitions": {
+          "ytd_2021": [null, null, null, -18]
+        },
+        "loans_recovered": {
+          "ytd_2021": [null, null, null, 0]
+        },
+        "total": {
+          "ytd_2021": [null, null, null, 497]
+        }
+      },
+      "financing": {
+        "capital_increase": {
+          "ytd_2021": [null, null, null, 0]
+        },
+        "lease_payments": {
+          "ytd_2021": [null, null, null, -75]
+        },
+        "loans_received": {
+          "ytd_2021": [null, null, null, 0]
+        },
+        "loans_repaid": {
+          "ytd_2021": [null, null, null, -502]
+        },
+        "interest_commissions": {
+          "ytd_2021": [null, null, null, -73]
+        },
+        "dividends_paid": {
+          "ytd_2021": [null, null, null, -3436]
+        },
+        "other": {
+          "ytd_2021": [null, null, null, -45]
+        },
+        "total": {
+          "ytd_2021": [null, null, null, -4131]
+        }
+      },
+      "summary": {
+        "net_change": {
+          "ytd_2021": [null, null, null, 4490]
+        },
+        "opening_cash": {
+          "ytd_2021": [null, null, null, 26050]
+        },
+        "closing_cash": {
+          "ytd_2021": [null, null, null, 30540]
+        }
+      }
+    }
+  },
+  "per_share": {
+    "shares": {
+      "2021": 18000000
+    },
+    "eps_ytd": {
+      "labels_2021": ["Q1 2021", "H1 2021", "9M 2021", "FY 2021"],
+      "ytd_2021": [null, null, null, 0.864]
+    },
+    "eps_quarterly": {
+      "quarterly_2021": [null, null, null, null]
+    }
+  },
+  "balance_sheet_2021": {
+    "dates": [
+      "2020-12-31",
+      null,
+      null,
+      null,
+      "2021-12-31"
+    ],
+    "labels": [
+      "31 дек 2020",
+      null,
+      null,
+      null,
+      "31 дек 2021"
+    ],
+    "note": "Данни от годишния отчет за 2021 г. (ALLTERCO JSCo). Само Dec 2020 и Dec 2021 са налични.",
+    "assets": {
+      "non_current": {
+        "ppe": {
+          "label_bg": "Имоти, машини и съоръжения",
+          "label_en": "Property, plant & equipment",
+          "values": [5062, null, null, null, 4802]
+        },
+        "intangibles": {
+          "label_bg": "Нематериални активи",
+          "label_en": "Intangible assets",
+          "values": [3643, null, null, null, 3110]
+        },
+        "right_of_use": {
+          "label_bg": "Активи с право на ползване",
+          "label_en": "Right-of-use assets",
+          "values": [46, null, null, null, 107]
+        },
+        "goodwill": {
+          "label_bg": "Репутация",
+          "label_en": "Goodwill",
+          "values": [2801, null, null, null, 160]
+        },
+        "associates": {
+          "label_bg": "Инвестиции в асоциирани дружества",
+          "label_en": "Investments in associates",
+          "values": [0, null, null, null, 40]
+        },
+        "other_lt_investments": {
+          "label_bg": "Други дългосрочни инвестиции",
+          "label_en": "Other long-term investments",
+          "values": [6566, null, null, null, 2624]
+        },
+        "lt_trade_receivables": {
+          "label_bg": "Дългосрочни търговски вземания",
+          "label_en": "Long-term trade receivables",
+          "values": [0, null, null, null, 2054]
+        },
+        "deferred_tax": {
+          "label_bg": "Активи по отсрочени данъци",
+          "label_en": "Deferred tax assets",
+          "values": [485, null, null, null, 72]
+        },
+        "total": {
+          "label_bg": "Общо нетекущи активи",
+          "label_en": "Total non-current assets",
+          "values": [18603, null, null, null, 12969]
+        }
+      },
+      "current": {
+        "inventories": {
+          "label_bg": "Материални запаси",
+          "label_en": "Inventories",
+          "values": [3660, null, null, null, 6656]
+        },
+        "trade_receivables": {
+          "label_bg": "Търговски вземания",
+          "label_en": "Trade receivables",
+          "values": [13948, null, null, null, 21204]
+        },
+        "other_receivables": {
+          "label_bg": "Други вземания",
+          "label_en": "Other receivables",
+          "values": [709, null, null, null, 2068]
+        },
+        "cash": {
+          "label_bg": "Пари и парични еквиваленти",
+          "label_en": "Cash and cash equivalents",
+          "values": [26050, null, null, null, 30540]
+        },
+        "prepaid": {
+          "label_bg": "Предплатени разходи",
+          "label_en": "Prepaid expenses",
+          "values": [42, null, null, null, 234]
+        },
+        "total": {
+          "label_bg": "Общо текущи активи",
+          "label_en": "Total current assets",
+          "values": [44409, null, null, null, 60702]
+        }
+      },
+      "assets_held_for_sale": {
+        "label_bg": "Нетекущи активи, класифицирани като държани за продажба",
+        "label_en": "Assets classified as held for sale",
+        "values": [2681, null, null, null, 0]
+      },
+      "total": {
+        "label_bg": "ОБЩО АКТИВИ",
+        "label_en": "TOTAL ASSETS",
+        "values": [65693, null, null, null, 73671]
+      }
+    },
+    "liabilities": {
+      "non_current": {
+        "bank_loans_lt": {
+          "label_bg": "Банкови заеми (дългосрочни)",
+          "label_en": "Bank loans (non-current)",
+          "values": [2518, null, null, null, 2007]
+        },
+        "lease_lt": {
+          "label_bg": "Задължения по лизинг (дългосрочни)",
+          "label_en": "Lease liabilities (non-current)",
+          "values": [31, null, null, null, 100]
+        },
+        "total": {
+          "label_bg": "Общо нетекущи пасиви",
+          "label_en": "Total non-current liabilities",
+          "values": [2549, null, null, null, 2107]
+        }
+      },
+      "current": {
+        "bank_loans_st": {
+          "label_bg": "Текущ дял от банкови заеми",
+          "label_en": "Current portion of bank loans",
+          "values": [511, null, null, null, 571]
+        },
+        "lease_st": {
+          "label_bg": "Задължения по лизинг (краткосрочни)",
+          "label_en": "Lease liabilities (current)",
+          "values": [75, null, null, null, 39]
+        },
+        "trade_payables": {
+          "label_bg": "Търговски задължения",
+          "label_en": "Trade payables",
+          "values": [1548, null, null, null, 1314]
+        },
+        "employee_st": {
+          "label_bg": "Задължения към персонала и осигурителни институции",
+          "label_en": "Employee and social security liabilities",
+          "values": [290, null, null, null, 289]
+        },
+        "tax_liabilities": {
+          "label_bg": "Данъчни задължения",
+          "label_en": "Tax liabilities",
+          "values": [395, null, null, null, 1376]
+        },
+        "other": {
+          "label_bg": "Други задължения",
+          "label_en": "Other liabilities",
+          "values": [854, null, null, null, 1073]
+        },
+        "total": {
+          "label_bg": "Общо текущи пасиви",
+          "label_en": "Total current liabilities",
+          "values": [3673, null, null, null, 4662]
+        }
+      },
+      "liabilities_held_for_sale": {
+        "label_bg": "Пасиви, свързани с активи държани за продажба",
+        "label_en": "Liabilities related to assets held for sale",
+        "values": [2635, null, null, null, 0]
+      },
+      "total": {
+        "label_bg": "ОБЩО ПАСИВИ",
+        "label_en": "TOTAL LIABILITIES",
+        "values": [8857, null, null, null, 6769]
+      }
+    },
+    "equity": {
+      "share_capital": {
+        "label_bg": "Регистриран акционерен капитал",
+        "label_en": "Share capital",
+        "values": [18000, null, null, null, 18000]
+      },
+      "retained_earnings": {
+        "label_bg": "Неразпределена печалба",
+        "label_en": "Retained earnings",
+        "values": [26938, null, null, null, 39117]
+      },
+      "legal_reserves": {
+        "label_bg": "Законови резерви",
+        "label_en": "Legal reserves",
+        "values": [1500, null, null, null, 1800]
+      },
+      "premium_reserve": {
+        "label_bg": "Премиен резерв",
+        "label_en": "Share premium reserve",
+        "values": [5703, null, null, null, 5403]
+      },
+      "oci": {
+        "label_bg": "Друг всеобхватен доход",
+        "label_en": "Other comprehensive income",
+        "values": [4849, null, null, null, 2623]
+      },
+      "treasury_shares": {
+        "label_bg": "Собствени акции",
+        "label_en": "Treasury shares",
+        "values": [-138, null, null, null, 0]
+      },
+      "fx_translation": {
+        "label_bg": "Валутно-курсови разлики",
+        "label_en": "Foreign currency translation reserve",
+        "values": [280, null, null, null, -41]
+      },
+      "equity_to_parent": {
+        "label_bg": "Капитал, отнасящ се към притежателите на майката",
+        "label_en": "Equity attributable to owners of parent",
+        "values": [57132, null, null, null, 66902]
+      },
+      "nci": {
+        "label_bg": "Неконтролиращо участие",
+        "label_en": "Non-controlling interest",
+        "values": [-296, null, null, null, 0]
+      },
+      "total": {
+        "label_bg": "ОБЩО СОБСТВЕН КАПИТАЛ",
+        "label_en": "TOTAL EQUITY",
+        "values": [56836, null, null, null, 66902]
+      }
+    }
+  }
+}
