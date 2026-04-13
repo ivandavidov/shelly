@@ -1,8 +1,8 @@
 """
-Шелли Груп — Валидационен скрипт за финансови данни
-=====================================================
-Зарежда динамично всички налични extract_qX_YYYY.py скриптове и
-прилага набор от счетоводни проверки върху всеки наличен период.
+Валидационен скрипт за финансови данни — company-agnostic
+==========================================================
+Зарежда динамично всички налични extract_qX_YYYY.py скриптове за
+дадена компания и прилага набор от счетоводни проверки.
 
 Проверки:
   [BS1]  Нетекущи активи + Текущи активи = Общо активи
@@ -20,19 +20,48 @@
 
 Допустима разлика: ±1 хил. лв. (закръгляване в отчетите)
 
-Използване: python3 validate.py
+Използване:
+  python3 validate.py --company shelly
+  python3 validate.py shelly            (positional)
 """
 
+import argparse
+import glob
 import importlib
 import os
+import re
 import sys
 
-sys.path.insert(0, os.path.dirname(__file__))
 
-ALL_YEARS = [2021, 2022, 2023, 2024, 2025]
+# ── CLI аргументи ─────────────────────────────────────────────────────────────
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Валидира финансовите данни на дадена компания."
+    )
+    parser.add_argument(
+        "company",
+        nargs="?",
+        help="ID на компанията (поддиректория в financial_data/, напр. 'shelly')",
+    )
+    parser.add_argument(
+        "--company", "-c",
+        dest="company_flag",
+        help="ID на компанията (алтернатива на позиционния аргумент)",
+    )
+    args = parser.parse_args()
+    company = args.company_flag or args.company
+    if not company:
+        parser.error(
+            "Моля, посочете ID на компанията: python3 validate.py --company shelly"
+        )
+    return company
+
+
+# ── Константи ─────────────────────────────────────────────────────────────────
+
 TOLERANCE = 1  # хил. лв.
 
-# ── Цветове за терминал ───────────────────────────────────────────────────────
 GREEN  = "\033[92m"
 RED    = "\033[91m"
 YELLOW = "\033[93m"
@@ -42,9 +71,25 @@ BOLD   = "\033[1m"
 
 # ── Зареждане на данни ────────────────────────────────────────────────────────
 
-def load_quarter(year, q):
+def discover_years(company_dir):
+    """Открива наличните години от extract_qX_YYYY.py файлове."""
+    pattern = os.path.join(company_dir, "extract_q*_*.py")
+    years = set()
+    for path in glob.glob(pattern):
+        m = re.search(r"extract_q\d+_(\d{4})\.py$", path)
+        if m:
+            years.add(int(m.group(1)))
+    return sorted(years)
+
+
+def load_quarter(company_dir, year, q):
+    module_name = f"extract_q{q}_{year}"
+    if company_dir not in sys.path:
+        sys.path.insert(0, company_dir)
+    if module_name in sys.modules:
+        del sys.modules[module_name]
     try:
-        mod = importlib.import_module(f"extract_q{q}_{year}")
+        mod = importlib.import_module(module_name)
         return mod.get_data()
     except ModuleNotFoundError:
         return None
@@ -78,7 +123,6 @@ class Validator:
         self.passed = 0
 
     def check(self, code, description, lhs_label, lhs_val, rhs_label, rhs_val):
-        """Сравнява lhs и rhs; регистрира грешка при разлика > TOLERANCE."""
         if lhs_val is None or rhs_val is None:
             self.warnings.append(
                 f"  [{code}] {description}: пропусната — липсва стойност "
@@ -95,11 +139,6 @@ class Validator:
             )
         else:
             self.passed += 1
-
-    def sum_if_present(self, d, *keys):
-        """Сумира всички намерени ключове; None ако нито един не е намерен."""
-        vals = [d[k] for k in keys if k in d]
-        return sum(vals) if vals else None
 
     def report(self):
         total = self.passed + len(self.errors)
@@ -123,17 +162,16 @@ def validate_balance_sheet(v_obj, bs):
 
     nc_assets    = v(bs, "общо_нетекущи_активи")
     curr_assets  = v(bs, "общо_текущи_активи")
-    hfs_assets   = v(bs, "активи_държани_за_продажба") or 0   # HFS — отделна балансова позиция
+    hfs_assets   = v(bs, "активи_държани_за_продажба") or 0
     total_assets = v(bs, "общо_активи")
 
     nc_liab   = v(bs, "общо_нетекущи_пасиви")
     curr_liab = v(bs, "общо_текущи_пасиви")
-    hfs_liab  = v(bs, "пасиви_държани_за_продажба") or 0      # HFS — отделна балансова позиция
+    hfs_liab  = v(bs, "пасиви_ържани_за_продажба") or 0
     total_liab = v(bs, "общо_пасиви")
 
     equity = v(bs, "общо_собствен_капитал")
 
-    # [BS1] Нетекущи + Текущи активи (+ HFS активи) = Общо активи
     if nc_assets is not None and curr_assets is not None:
         v_obj.check(
             "BS1", "Нетекущи активи + Текущи активи (+ HFS) = Общо активи",
@@ -141,7 +179,6 @@ def validate_balance_sheet(v_obj, bs):
             "Общо активи (отчетено)", total_assets,
         )
 
-    # [BS2] Нетекущи + Текущи пасиви (+ HFS пасиви) = Общо пасиви
     if nc_liab is not None and curr_liab is not None:
         v_obj.check(
             "BS2", "Нетекущи пасиви + Текущи пасиви (+ HFS) = Общо пасиви",
@@ -149,7 +186,6 @@ def validate_balance_sheet(v_obj, bs):
             "Общо пасиви (отчетено)", total_liab,
         )
 
-    # [BS3] Пасиви + Капитал = Активи (основно счетоводно уравнение)
     if total_liab is not None and equity is not None:
         v_obj.check(
             "BS3", "Общо пасиви + Собствен капитал = Общо активи",
@@ -185,7 +221,6 @@ def validate_income_statement(v_obj, is_):
     oci        = v(is_, "общо_oci") or 0
     total_ci   = v(is_, "общо_всеобхватен_доход")
 
-    # [IS1] Приходи + COGS = Брутна печалба
     if rev is not None and cogs is not None:
         v_obj.check(
             "IS1", "Приходи + Себестойност = Брутна печалба",
@@ -193,11 +228,10 @@ def validate_income_statement(v_obj, is_):
             "Отчетена брутна печалба", gp,
         )
 
-    # [IS2] Брутна печалба + оперативни приходи/разходи = EBIT
-    # Пропуска се ако нито един оперативен ред не е наличен (непълни сравнителни данни)
+    impairment = v(is_, "разходи_за_обезценка") or 0
     op_items_present = any(x is not None for x in [other_inc, sell_exp, admin_exp, other_exp])
     if gp is not None and ebit is not None and op_items_present:
-        calc_ebit = gp + (other_inc or 0) + (sell_exp or 0) + (admin_exp or 0) + (other_exp or 0)
+        calc_ebit = gp + (other_inc or 0) + (sell_exp or 0) + (admin_exp or 0) + (other_exp or 0) + impairment
         v_obj.check(
             "IS2", "Брутна печалба + оперативни корекции = EBIT",
             "Изчислен EBIT", calc_ebit,
@@ -205,11 +239,9 @@ def validate_income_statement(v_obj, is_):
         )
     elif gp is not None and ebit is not None and not op_items_present:
         v_obj.warnings.append(
-            "  [IS2] Брутна печалба → EBIT: пропусната — липсват детайлни оперативни редове "
-            "(непълни данни за периода)"
+            "  [IS2] Брутна печалба → EBIT: пропусната — липсват детайлни оперативни редове"
         )
 
-    # [IS3] EBIT + финансов резултат + асоциирани = EBT
     if ebit is not None and ebt is not None:
         v_obj.check(
             "IS3", "EBIT + Финансов резултат + Асоциирани = EBT",
@@ -217,10 +249,6 @@ def validate_income_statement(v_obj, is_):
             "Отчетен EBT", ebt,
         )
 
-    # [IS4] EBT + Данъци = Нетна печалба
-    # Стандартна МСФО презентация: EBT е само от продължаващи дейности → EBT+данък = нетна продълж.
-    # Но понякога (малки discontinued суми) EBT включва и discontinued → EBT+данък = нетна общо.
-    # Приемаме и двата случая; ако нито един не минава — грешка.
     if ebt is not None:
         calc = ebt + tax
         match_cont  = net_cont  is not None and abs(calc - net_cont)  <= TOLERANCE
@@ -243,7 +271,6 @@ def validate_income_statement(v_obj, is_):
                 f"         Разлика                  = {diff:>+12,.0f}  ← ГРЕШКА"
             )
 
-    # [IS5] Продължаващи + Преустановени = Нетна печалба общо
     if net_cont is not None and net_total is not None:
         v_obj.check(
             "IS5", "Нетна (продълж.) + Нетна (преустановени) = Нетна печалба общо",
@@ -251,7 +278,6 @@ def validate_income_statement(v_obj, is_):
             "Отчетена нетна печалба", net_total,
         )
 
-    # [IS6] Нетна печалба + OCI = Общо всеобхватен доход
     if net_total is not None and total_ci is not None:
         v_obj.check(
             "IS6", "Нетна печалба + OCI = Общо всеобхватен доход",
@@ -272,7 +298,6 @@ def validate_cash_flows(v_obj, cf, bs):
     opening    = v(cf, "пари_в_началото")
     closing_cf = v(cf, "пари_в_края")
 
-    # [CF1] Оп + Инв + Фин = Нетна промяна
     if op is not None and inv is not None and fin is not None and net_change is not None:
         v_obj.check(
             "CF1", "Оперативни + Инвестиционни + Финансови потоци = Нетна промяна на пари",
@@ -280,8 +305,6 @@ def validate_cash_flows(v_obj, cf, bs):
             "Отчетена нетна промяна", net_change,
         )
 
-    # [CF2] Начало + Нетна промяна + Курсови (+ HFS преклас.) = Край
-    # Някои периоди съдържат пари, прекласифицирани към "държани за продажба" (HFS).
     hfs_cash = v(cf, "пари_прехвърлени_към_hfs") or 0
     if opening is not None and net_change is not None and closing_cf is not None:
         v_obj.check(
@@ -290,31 +313,29 @@ def validate_cash_flows(v_obj, cf, bs):
             "Отчетени пари в края (ПП)", closing_cf,
         )
 
-    # [CF3] Пари в края (ПП) = Пари и парични еквиваленти (Баланс)
     if closing_cf is not None and bs:
         cash_bs = v(bs, "пари_и_парични_еквиваленти")
         if cash_bs is not None:
             v_obj.check(
                 "CF3", "Пари в края (ПП) = Пари и пар. еквиваленти (Баланс)",
-                "Пари в края (ПП)",      closing_cf,
-                "Пари (Баланс)",          cash_bs,
+                "Пари в края (ПП)",  closing_cf,
+                "Пари (Баланс)",     cash_bs,
             )
 
 
 # ── Главна логика ─────────────────────────────────────────────────────────────
 
-def run():
+def run(company, company_dir, all_years):
     total_errors = 0
     total_checked = 0
     periods_found = 0
 
-    for year in ALL_YEARS:
+    for year in all_years:
         for q in range(1, 5):
-            raw = load_quarter(year, q)
+            raw = load_quarter(company_dir, year, q)
             if raw is None:
                 continue
 
-            # Q4 скриптовете могат да съдържат и данни за предходната година
             years_in_file = [year]
             if str(year - 1) in raw:
                 years_in_file.append(year - 1)
@@ -324,7 +345,6 @@ def run():
                 if not is_ and not bs and not cf:
                     continue
 
-                # Период — по-кратък за Q1–Q3, пълен за Q4/годишни
                 if y == year:
                     label = raw.get("meta", {}).get("период", f"Q{q} {year}")
                 else:
@@ -340,9 +360,8 @@ def run():
                 total_errors += len(val.errors)
                 total_checked += val.passed + len(val.errors)
 
-    # Обобщение
     print(f"\n{'═'*60}")
-    print(f"{BOLD}ОБОБЩЕНИЕ{RESET}")
+    print(f"{BOLD}ОБОБЩЕНИЕ — {company}{RESET}")
     print(f"  Периоди проверени : {periods_found}")
     print(f"  Проверки общо     : {total_checked}")
     if total_errors == 0:
@@ -355,5 +374,20 @@ def run():
 
 
 if __name__ == "__main__":
-    errors = run()
+    company = parse_args()
+
+    base_dir    = os.path.dirname(os.path.abspath(__file__))
+    company_dir = os.path.join(base_dir, company)
+
+    if not os.path.isdir(company_dir):
+        print(f"Грешка: директорията '{company_dir}' не съществува.")
+        sys.exit(1)
+
+    all_years = discover_years(company_dir)
+    if not all_years:
+        print(f"Грешка: не са намерени extract_qX_YYYY.py файлове в '{company_dir}'.")
+        sys.exit(1)
+
+    print(f"\nВалидация: {company}  |  Години: {all_years}\n")
+    errors = run(company, company_dir, all_years)
     sys.exit(1 if errors else 0)

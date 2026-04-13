@@ -1,0 +1,38 @@
+{
+  "id": "shelly",
+  "name": "Шелли Груп АД",
+  "subtitle": "Финансов дашборд за инвеститори",
+  "logo_letter": "S",
+
+  "tickers": [
+    {
+      "label": "BSE: SLYG",
+      "url": "https://www.bse-sofia.bg/bg/issuer-profile/SLYG/"
+    },
+    {
+      "label": "XETRA: SLYG",
+      "url": "https://live.deutsche-boerse.com/equity/shelly-group-se?mic=XETR"
+    }
+  ],
+
+  "info": {
+    "Борса":   "BSE Sofia / XETRA",
+    "Тикър":   "SLYG",
+    "ISIN":    "BG1100003166",
+    "Сектор":  "IoT / Smart Home",
+    "ЕИК":     "175440738"
+  },
+
+  "currency": {
+    "source":          "BGN",
+    "display":         "EUR",
+    "display_unit":    "хил. EUR",
+    "rate_bgn_eur":    1.95583,
+    "eur_from_year":   2026,
+    "note":            "Данните до 31.12.2025 са конвертирани от BGN по фиксиран курс 1.95583, а данните от 2026 нататък са в EUR."
+  },
+
+  "footer": "Всички суми са визуализирани в хиляди EUR. Данните до 31.12.2025 са конвертирани от BGN по фиксиран курс 1.95583, а данните от 2026 нататък следва да се въвеждат директно в EUR. Източници: тримесечни консолидирани финансови отчети на Шелли Груп АД по МСФО.",
+
+  "data_file": "data.csv"
+}

@@ -1,193 +1,357 @@
-let D = null;
-let currentMode = 'quarterly';
-let activeYears = new Set(['2022','2023','2024','2025']);
-const charts = {};
-const BGN_PER_EUR = 1.95583;
-const EUR_TRANSITION_YEAR = 2026;
-const DISPLAY_CURRENCY = 'EUR';
-const DISPLAY_AMOUNT_UNIT = 'хил. EUR';
-const DISPLAY_PER_SHARE_UNIT = DISPLAY_CURRENCY;
+// ── Constants (defaults — overridden by meta.json per company) ───────────────
+let BGN_PER_EUR = 1.95583;
+let EUR_TRANSITION_YEAR = 2026;
+let DISPLAY_AMOUNT_UNIT = 'хил. EUR';
+let DISPLAY_PER_SHARE_UNIT = 'EUR';
 
+// CSV row labels
+const ROW = {
+  revenue:      'Приходи от продажби',
+  cogs:         'Себестойност на продажбите',
+  gross_profit: 'Брутна печалба',
+  other_inc:    'Други приходи от дейността',
+  sell_exp:     'Разходи за продажби',
+  admin_exp:    'Административни разходи',
+  other_exp:    'Други разходи за дейността',
+  ebit:         'Печалба от оперативна дейност (EBIT)',
+  fin_inc:      'Финансови приходи',
+  fin_exp:      'Финансови разходи',
+  assoc:        'Дял от печалбата на асоциирани дружества',
+  ebt:          'Печалба преди данъци (EBT)',
+  tax:          'Разход за данъци',
+  net_cont:     'Нетна печалба от продължаващи дейности',
+  discont:      'Печалба от преустановени дейности',
+  net_profit:   'Нетна печалба',
+  oci:          'Друг всеобхватен доход (OCI) — общо',
+  total_ci:     'Общо всеобхватен доход',
+  eps:          'Нетен доход на акция (EPS, лв.)',
+  // Assets
+  ppe:          'Имоти, машини и съоръжения',
+  intangibles:  'Нематериални активи',
+  rou:          'Активи с право на ползване',
+  goodwill:     'Репутация',
+  assoc_inv:    'Инвестиции в асоциирани дружества',
+  deferred_tax: 'Активи по отсрочени данъци',
+  nc_assets:    'Общо нетекущи активи',
+  inventories:  'Материални запаси',
+  recv:         'Търговски вземания',
+  other_recv:   'Други вземания',
+  cash:         'Пари и парични еквиваленти',
+  curr_assets:  'Общо текущи активи',
+  total_assets: 'ОБЩО АКТИВИ',
+  // Liabilities
+  lease_lt:     'Задължения по лизинг (дългосрочни)',
+  nc_employee:  'Дългосрочни задължения към персонала',
+  nc_liab:      'Общо нетекущи пасиви',
+  bank_loans:   'Банкови заеми',
+  lease_st:     'Задължения по лизинг (краткосрочни)',
+  trade_pay:    'Търговски задължения',
+  employee_pay: 'Задължения към персонала и осигуряването',
+  other_pay:    'Други задължения',
+  curr_liab:    'Общо текущи пасиви',
+  total_liab:   'ОБЩО ПАСИВИ',
+  // Equity
+  share_cap:    'Регистриран акционерен капитал',
+  retained:     'Неразпределена печалба',
+  legal_res:    'Законови резерви',
+  premium:      'Премиен резерв',
+  fx_res:       'Валутно-курсови разлики',
+  equity:       'ОБЩО СОБСТВЕН КАПИТАЛ',
+  // Cash flows
+  rcv_clients:  'Постъпления от клиенти',
+  pay_suppliers:'Плащания към доставчици',
+  taxes_net:    'Данъци възстановени/(платени), нето',
+  pay_employee: 'Плащания към персонал и осигуряване',
+  cf_op:        'Нетни парични потоци от оперативна дейност',
+  capex:        'Капиталови разходи (CAPEX)',
+  cf_inv:       'Нетни парични потоци от инвестиционна дейност',
+  dividends:    'Изплатени дивиденти',
+  cf_fin:       'Нетни парични потоци от финансова дейност',
+  cash_start:   'Пари в началото на периода',
+  cash_end:     'Пари в края на периода',
+};
+
+// ── State ────────────────────────────────────────────────────────────────────
+let meta = {};         // loaded from companies/{id}/meta.json
+let csvData = {};      // csvData[rowLabel][colKey] = string value
+let periods = [];      // [{q, year, months, key}]
+let allYears = [];     // ['2021','2022',...]
+let activeYears = new Set();
+let currentMode = 'quarterly';
+const charts = {};
+
+// ── Company routing ───────────────────────────────────────────────────────────
+/**
+ * Reads ?company=<id> from the URL.
+ * Falls back to the first subdirectory listed, or 'shelly' as last resort.
+ * Example URLs:
+ *   index.html?company=shelly
+ *   index.html?company=acme
+ */
+function getCompanyId() {
+  const params = new URLSearchParams(window.location.search);
+  return (params.get('company') || 'shelly').replace(/[^a-zA-Z0-9_-]/g, '');
+}
+
+/**
+ * Applies loaded meta.json to the DOM:
+ *  - page <title>
+ *  - header logo letter, company name, subtitle
+ *  - ticker badges
+ *  - KPI label currency suffix
+ *  - page footer text
+ *  - currency constants
+ */
+function applyMeta(m) {
+  // Page title
+  document.title = `${m.name} – Финансов дашборд`;
+
+  // Header
+  document.getElementById('header-logo').textContent = m.logo_letter || m.name.charAt(0);
+  document.getElementById('company-name').textContent = m.name;
+  document.getElementById('company-subtitle').textContent = m.subtitle || '';
+
+  // Ticker badges
+  const tickersEl = document.getElementById('company-tickers');
+  tickersEl.innerHTML = (m.tickers || []).map(t =>
+    `<a class="ticker-badge" href="${t.url}" target="_blank" rel="noopener">${t.label}</a>`
+  ).join('');
+
+  // Currency constants from meta
+  if (m.currency) {
+    BGN_PER_EUR         = m.currency.rate_bgn_eur    ?? BGN_PER_EUR;
+    EUR_TRANSITION_YEAR = m.currency.eur_from_year   ?? EUR_TRANSITION_YEAR;
+    DISPLAY_AMOUNT_UNIT = m.currency.display_unit    ?? DISPLAY_AMOUNT_UNIT;
+    DISPLAY_PER_SHARE_UNIT = m.currency.display      ?? DISPLAY_PER_SHARE_UNIT;
+  }
+
+  // KPI labels — append display currency
+  const disp = DISPLAY_PER_SHARE_UNIT;
+  document.getElementById('kpi-revenue-label').textContent   = `Приходи (${disp})`;
+  document.getElementById('kpi-netprofit-label').textContent = `Нетна печалба (${disp})`;
+  document.getElementById('kpi-eps-label').textContent       = `EPS (${disp} на акция)`;
+
+  // Footer
+  const footerEl = document.getElementById('page-footer');
+  if (footerEl) footerEl.textContent = m.footer || '';
+}
+
+// ── Formatting ───────────────────────────────────────────────────────────────
 function fmtNum(v, decimals = 0) {
-  if (v === null || v === undefined || isNaN(v)) return '–';
+  if (v == null || isNaN(v)) return '–';
   return v.toLocaleString('bg-BG', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
-
 function fmtMoney(v) {
-  if (v === null || v === undefined || isNaN(v)) return '–';
+  if (v == null || isNaN(v)) return '–';
   const abs = Math.abs(v);
-  if (abs >= 100000) {
-    const m = v / 1000;
-    return (m >= 0 ? '' : '-') + Math.abs(m).toLocaleString('bg-BG', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' млн.';
-  }
-  return v.toLocaleString('bg-BG', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  if (abs >= 100000) return (v < 0 ? '-' : '') + (Math.abs(v)/1000).toLocaleString('bg-BG',{minimumFractionDigits:1,maximumFractionDigits:1}) + ' млн.';
+  return v.toLocaleString('bg-BG', {minimumFractionDigits:0, maximumFractionDigits:0});
 }
-
-function fmtBGN(v) {
-  return fmtMoney(v);
-}
-
+const fmtBGN = fmtMoney;
 function fmtAmountCompact(v) {
-  if (v === null || v === undefined || isNaN(v)) return '–';
+  if (v == null || isNaN(v)) return '–';
   const abs = Math.abs(v);
-  if (abs >= 1000) {
-    const m = v / 1000;
-    return (m >= 0 ? '' : '-') + Math.abs(m).toLocaleString('bg-BG', {
-      minimumFractionDigits: 1,
-      maximumFractionDigits: 1
-    }) + ` млн. ${DISPLAY_CURRENCY}`;
-  }
-  return v.toLocaleString('bg-BG', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0
-  }) + ` ${DISPLAY_AMOUNT_UNIT}`;
+  if (abs >= 1000) return (v < 0 ? '-' : '') + (Math.abs(v)/1000).toLocaleString('bg-BG',{minimumFractionDigits:1,maximumFractionDigits:1}) + ` млн. EUR`;
+  return v.toLocaleString('bg-BG',{minimumFractionDigits:0,maximumFractionDigits:0}) + ` хил. EUR`;
 }
-
 function fmtAmountTooltip(v, absolute = false) {
-  const value = absolute ? Math.abs(v) : v;
-  if (value === null || value === undefined || isNaN(value)) return '–';
-  return value.toLocaleString('bg-BG', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0
-  }) + ` ${DISPLAY_AMOUNT_UNIT}`;
+  const val = absolute ? Math.abs(v) : v;
+  if (val == null || isNaN(val)) return '–';
+  return val.toLocaleString('bg-BG',{minimumFractionDigits:0,maximumFractionDigits:0}) + ` ${DISPLAY_AMOUNT_UNIT}`;
 }
-
 function fmtPerShare(v, decimals = 2) {
-  if (v === null || v === undefined || isNaN(v)) return '–';
+  if (v == null || isNaN(v)) return '–';
   return v.toFixed(decimals) + ' ' + DISPLAY_PER_SHARE_UNIT;
 }
-
-function isEURSourceYear(year) {
-  return Number(year) >= EUR_TRANSITION_YEAR;
-}
-
-function convertMoneyValue(v, year) {
-  if (v === null || v === undefined || isNaN(v)) return v;
-  return isEURSourceYear(year) ? v : v / BGN_PER_EUR;
-}
-
-function convertMoneyArray(arr, year, length = 4) {
-  const values = arr || Array(length).fill(null);
-  return values.map(v => convertMoneyValue(v, year));
-}
-
-function getPeriodValues(container, prefix, year, length = 4) {
-  return convertMoneyArray(container?.[`${prefix}_${year}`], year, length);
-}
-
 function fmtPct(v, decimals = 1) {
-  if (v === null || v === undefined || isNaN(v)) return '–';
+  if (v == null || isNaN(v)) return '–';
   return v.toFixed(decimals) + '%';
 }
-
-function pctColor(v) {
-  if (v === null || v === undefined || isNaN(v)) return 'neutral';
-  return v >= 0 ? 'positive' : 'negative';
-}
-
+function pctColor(v) { return (v == null || isNaN(v)) ? 'neutral' : v >= 0 ? 'positive' : 'negative'; }
 function yoySpan(v) {
-  if (v === null || v === undefined || isNaN(v)) return '';
-  const cls = pctColor(v);
-  const sign = v >= 0 ? '+' : '';
-  return `<span class="${cls}">${sign}${fmtPct(v)}</span>`;
+  if (v == null || isNaN(v)) return '';
+  return `<span class="${pctColor(v)}">${v >= 0 ? '+' : ''}${fmtPct(v)}</span>`;
 }
-
 function numCell(v, isMargin = false) {
-  if (v === null || v === undefined || isNaN(v)) return '<td>–</td>';
+  if (v == null || isNaN(v)) return '<td>–</td>';
   const cls = v < 0 ? 'negative' : '';
-  const text = isMargin ? fmtPct(v) : fmtBGN(v);
-  return `<td class="${cls}">${text}</td>`;
+  return `<td class="${cls}">${isMargin ? fmtPct(v) : fmtBGN(v)}</td>`;
 }
 
-const YEARS = ['2021','2022','2023','2024','2025'];
+// ── Currency conversion ───────────────────────────────────────────────────────
+function toEUR(v, year) {
+  if (v == null || isNaN(v)) return null;
+  return +year >= EUR_TRANSITION_YEAR ? v : v / BGN_PER_EUR;
+}
+// EPS is per-share in BGN — same conversion
+const toEUR_eps = toEUR;
 
-function getQuarterly(item, year) {
-  return getPeriodValues(item, 'quarterly', year);
+// ── CSV data access ───────────────────────────────────────────────────────────
+function colKey(year, q) {
+  const months = [3, 6, 9, 12][q - 1];
+  return `Q${q} ${year} (${months}М)`;
 }
 
-function getYTD(item, year) {
-  return getPeriodValues(item, 'ytd', year);
+/** Raw YTD value for a row at year/quarter (null if missing/empty) */
+function ytdRaw(label, year, q) {
+  const v = csvData[label]?.[colKey(year, q)];
+  if (v === '' || v == null) return null;
+  const n = parseFloat(v);
+  return isNaN(n) ? null : n;
 }
 
-function getEPSYTD(year) {
-  return getPeriodValues(D?.per_share?.eps_ytd, 'ytd', year);
+/** IS/CF: quarterly value = YTD diff; q=1 returns YTD(1) */
+function qIS(label, year, q) {
+  const curr = ytdRaw(label, year, q);
+  if (q === 1) return curr;
+  const prev = ytdRaw(label, year, q - 1);
+  return (curr !== null && prev !== null) ? curr - prev : curr !== null ? curr : null;
 }
 
-function getEPSQuarterly(year) {
-  return getPeriodValues(D?.per_share?.eps_quarterly, 'quarterly', year);
+/** BS: point-in-time — same as YTD raw */
+const qBS = ytdRaw;
+
+/** In EUR, IS/CF quarterly */
+function qE(label, year, q) { return toEUR(qIS(label, year, q), year); }
+/** In EUR, annual (YTD Q4) */
+function aE(label, year) { return toEUR(ytdRaw(label, year, 4), year); }
+/** In EUR, BS point-in-time */
+function bsE(label, year, q) { return toEUR(qBS(label, year, q), year); }
+
+// ── Share count (derived from net profit / EPS) ───────────────────────────────
+const _shareCountCache = {};
+function sharesForYear(year) {
+  if (_shareCountCache[year]) return _shareCountCache[year];
+  const np = ytdRaw(ROW.net_profit, year, 4);
+  const eps = ytdRaw(ROW.eps, year, 4);
+  if (np && eps && eps > 0) {
+    _shareCountCache[year] = Math.round(np * 1000 / eps);
+  } else {
+    _shareCountCache[year] = 18000000;
+  }
+  return _shareCountCache[year];
 }
 
+// ── Balance helper: long-term bank loans ─────────────────────────────────────
+// bank_loans_lt = nc_liab - lease_lt - nc_employee_obligations
+function bankLoansLT(year, q) {
+  const ncl  = ytdRaw(ROW.nc_liab,     year, q) || 0;
+  const llt  = ytdRaw(ROW.lease_lt,    year, q) || 0;
+  const nce  = ytdRaw(ROW.nc_employee, year, q) || 0;
+  return Math.max(0, ncl - llt - nce);
+}
+
+// ── Build BS data point ───────────────────────────────────────────────────────
+function bsPoint(year, q, label) {
+  const bankLT = toEUR(bankLoansLT(year, q), year);
+  const bankST = bsE(ROW.bank_loans, year, q) || 0;
+  return {
+    label,
+    assets:              bsE(ROW.total_assets, year, q),
+    current_assets:      bsE(ROW.curr_assets,  year, q),
+    liabilities:         bsE(ROW.total_liab,   year, q),
+    current_liabilities: bsE(ROW.curr_liab,    year, q),
+    equity:              bsE(ROW.equity,        year, q),
+    cash:                bsE(ROW.cash,          year, q),
+    recv:                bsE(ROW.recv,          year, q),
+    re:                  bsE(ROW.retained,      year, q),
+    inventories:         bsE(ROW.inventories,   year, q),
+    bank_loans:          (bankLT || 0) + (bankST || 0),
+    bank_loans_st:       bankST,
+    lease_st:            bsE(ROW.lease_st,      year, q),
+    lease_lt:            bsE(ROW.lease_lt,      year, q),
+    trade_payables:      bsE(ROW.trade_pay,     year, q),
+    sourceYear: year,
+  };
+}
+
+// ── Build IS/CF series data point ────────────────────────────────────────────
+function isPoint(year, q, label) {
+  const cfOp  = qE(ROW.cf_op,  year, q);
+  const capex = qE(ROW.capex,  year, q);
+  // Net change in cash: cash_end(q) - cash_end(q-1) [or cash_start for q=1]
+  const cashQ  = ytdRaw(ROW.cash_end,   year, q);
+  const cashPrev = q === 1 ? ytdRaw(ROW.cash_start, year, 1) : ytdRaw(ROW.cash_end, year, q - 1);
+  const cfNet = (cashQ !== null && cashPrev !== null) ? toEUR(cashQ - cashPrev, year) : null;
+  return {
+    label,
+    revenue:     qE(ROW.revenue,     year, q),
+    net_profit:  qE(ROW.net_profit,  year, q),
+    gross_profit:qE(ROW.gross_profit,year, q),
+    ebit:        qE(ROW.ebit,        year, q),
+    cogs:        Math.abs(qE(ROW.cogs,     year, q) ?? 0) || null,
+    sellExp:     Math.abs(qE(ROW.sell_exp, year, q) ?? 0) || null,
+    adminExp:    Math.abs(qE(ROW.admin_exp,year, q) ?? 0) || null,
+    otherExp:    Math.abs(qE(ROW.other_exp,year, q) ?? 0) || null,
+    finInc:      qE(ROW.fin_inc,  year, q),
+    finExp:      Math.abs(qE(ROW.fin_exp, year, q) ?? 0) || null,
+    tax:         Math.abs(qE(ROW.tax,     year, q) ?? 0) || null,
+    cf_op:       cfOp,
+    cf_fcf:      cfOp != null && capex != null ? cfOp + capex : null,
+    cf_net:      cfNet,
+    eps:         toEUR_eps(qBS(ROW.eps, year, q), year),  // EPS is already period-specific in CSV
+    sourceYear:  year,
+    quarter:     q,
+    shareCount:  sharesForYear(year),
+  };
+}
+
+// NOTE: EPS in the CSV is YTD cumulative. For quarterly EPS, compute from net profit / shares.
+function qEPS(year, q) {
+  const np = qE(ROW.net_profit, year, q);  // quarterly net profit in hil. EUR
+  const shares = sharesForYear(year);
+  if (np != null && shares > 0) return (np * 1000) / shares;
+  return null;
+}
+function aEPS(year) {
+  const np = aE(ROW.net_profit, year);  // annual net profit in hil. EUR
+  const shares = sharesForYear(year);
+  if (np != null && shares > 0) return (np * 1000) / shares;
+  return null;
+}
+
+// ── Build series (IS/CF) data ─────────────────────────────────────────────────
 function buildSeriesData() {
-  const IS = D.income_statement.items;
-  const CF = D.cash_flows.items;
-
   if (currentMode === 'annual') {
-    return YEARS.map(yr => {
-      const rev = getYTD(IS.revenue, yr)[3];
-      const np  = getYTD(IS.net_profit, yr)[3];
-      const gp  = getYTD(IS.gross_profit, yr)[3];
-      const eb  = getYTD(IS.ebit, yr)[3];
-      const cogs = Math.abs(getYTD(IS.cogs, yr)[3]);
-      const sellExp = Math.abs(getYTD(IS.selling_expenses, yr)[3]);
-      const adminExp = Math.abs(getYTD(IS.admin_expenses, yr)[3]);
-      const otherExp = Math.abs(getYTD(IS.other_operating_expenses, yr)[3]);
-      const finInc = getYTD(IS.financial_income, yr)[3];
-      const finExp = Math.abs(getYTD(IS.financial_expenses, yr)[3]);
-      const tax = Math.abs(getYTD(IS.tax, yr)[3]);
-      const cfOp = getPeriodValues(CF.operating.total, 'ytd', yr)[3] ?? null;
-      const cfCap = getPeriodValues(CF.investing.capex, 'ytd', yr)[3] ?? null;
-      const cfNet = getPeriodValues(CF.summary.net_change, 'ytd', yr)[3] ?? null;
-      const eps = getEPSYTD(yr)[3] ?? null;
-      return { 
-        label: yr, revenue: rev, net_profit: np, gross_profit: gp, ebit: eb,
-        cogs, sellExp, adminExp, otherExp, finInc, finExp, tax,
-        cf_op: cfOp, cf_fcf: (cfOp !== null && cfCap !== null ? cfOp + cfCap : null), cf_net: cfNet, eps,
+    return allYears.map(yr => {
+      const cfOp  = aE(ROW.cf_op,  yr);
+      const capex = aE(ROW.capex,  yr);
+      const cashEnd   = ytdRaw(ROW.cash_end,   yr, 4);
+      const cashStart = ytdRaw(ROW.cash_start, yr, 1);
+      const cfNet = (cashEnd != null && cashStart != null) ? toEUR(cashEnd - cashStart, yr) : null;
+      return {
+        label: yr,
+        revenue:      aE(ROW.revenue,     yr),
+        net_profit:   aE(ROW.net_profit,  yr),
+        gross_profit: aE(ROW.gross_profit,yr),
+        ebit:         aE(ROW.ebit,        yr),
+        cogs:     Math.abs(aE(ROW.cogs,     yr) ?? 0) || null,
+        sellExp:  Math.abs(aE(ROW.sell_exp, yr) ?? 0) || null,
+        adminExp: Math.abs(aE(ROW.admin_exp,yr) ?? 0) || null,
+        otherExp: Math.abs(aE(ROW.other_exp,yr) ?? 0) || null,
+        finInc:   aE(ROW.fin_inc, yr),
+        finExp:   Math.abs(aE(ROW.fin_exp, yr) ?? 0) || null,
+        tax:      Math.abs(aE(ROW.tax,     yr) ?? 0) || null,
+        cf_op:  cfOp,
+        cf_fcf: cfOp != null && capex != null ? cfOp + capex : null,
+        cf_net: cfNet,
+        eps:    aEPS(yr),
         sourceYear: yr,
-        shareCount: getShareCountAnnual(yr)
+        shareCount: sharesForYear(yr),
       };
     });
   }
 
   if (currentMode === 'quarterly') {
     const result = [];
-    for (const yr of YEARS) {
+    for (const yr of allYears) {
       if (!activeYears.has(yr)) continue;
-      const revQ  = getQuarterly(IS.revenue, yr);
-      const npQ   = getQuarterly(IS.net_profit, yr);
-      const gpQ   = getQuarterly(IS.gross_profit, yr);
-      const ebQ   = getQuarterly(IS.ebit, yr);
-      const cogsQ = getQuarterly(IS.cogs, yr).map(v => Math.abs(v));
-      const sellQ = getQuarterly(IS.selling_expenses, yr).map(v => Math.abs(v));
-      const adminQ = getQuarterly(IS.admin_expenses, yr).map(v => Math.abs(v));
-      const otherQ = getQuarterly(IS.other_operating_expenses, yr).map(v => Math.abs(v));
-      const finIncQ = getQuarterly(IS.financial_income, yr);
-      const finExpQ = getQuarterly(IS.financial_expenses, yr).map(v => Math.abs(v));
-      const taxQ = getQuarterly(IS.tax, yr).map(v => Math.abs(v));
-      const cfOpQ = getPeriodValues(CF.operating.total, 'quarterly', yr);
-      const cfCapYTD = getPeriodValues(CF.investing.capex, 'ytd', yr);
-      const cfCapQ = [
-        cfCapYTD[0],
-        cfCapYTD[1] !== null && cfCapYTD[0] !== null ? cfCapYTD[1] - cfCapYTD[0] : null,
-        cfCapYTD[2] !== null && cfCapYTD[1] !== null ? cfCapYTD[2] - cfCapYTD[1] : null,
-        cfCapYTD[3] !== null && cfCapYTD[2] !== null ? cfCapYTD[3] - cfCapYTD[2] : null,
-      ];
-      const cfNetQ = getPeriodValues(CF.summary.net_change, 'quarterly', yr);
-      const epsQ = getEPSQuarterly(yr);
-      const qLabels = ['Q1','Q2','Q3','Q4'];
-      for (let i = 0; i < 4; i++) {
-        result.push({
-          label: `${qLabels[i]}'${yr.slice(2)}`, yr,
-          revenue: revQ[i], net_profit: npQ[i], gross_profit: gpQ[i], ebit: ebQ[i],
-          cogs: cogsQ[i], sellExp: sellQ[i], adminExp: adminQ[i], otherExp: otherQ[i],
-          finInc: finIncQ[i], finExp: finExpQ[i], tax: taxQ[i],
-          cf_op: cfOpQ[i],
-          cf_fcf: cfOpQ[i] !== null && cfCapQ[i] !== null ? cfOpQ[i] + cfCapQ[i] : null,
-          cf_net: cfNetQ[i],
-          eps: epsQ[i],
-          sourceYear: yr,
-          quarter: i + 1,
-          shareCount: getShareCount(yr, i + 1)
-        });
+      for (let q = 1; q <= 4; q++) {
+        if (ytdRaw(ROW.revenue, yr, q) == null) continue;
+        const label = `Q${q}'${yr.slice(2)}`;
+        const pt = isPoint(yr, q, label);
+        pt.eps = qEPS(yr, q);
+        result.push(pt);
       }
     }
     return result;
@@ -195,243 +359,131 @@ function buildSeriesData() {
 
   if (currentMode === 'ltm') {
     // Annual bars for all years except the last
-    const annualYears = YEARS.slice(0, -1);
-    const result = annualYears.map(yr => {
-      const rev = getYTD(IS.revenue, yr)[3];
-      const np  = getYTD(IS.net_profit, yr)[3];
-      const gp  = getYTD(IS.gross_profit, yr)[3];
-      const eb  = getYTD(IS.ebit, yr)[3];
-      const cogs    = Math.abs(getYTD(IS.cogs, yr)[3] ?? 0);
-      const sellExp = Math.abs(getYTD(IS.selling_expenses, yr)[3] ?? 0);
-      const adminExp = Math.abs(getYTD(IS.admin_expenses, yr)[3] ?? 0);
-      const otherExp = Math.abs(getYTD(IS.other_operating_expenses, yr)[3] ?? 0);
-      const finInc  = getYTD(IS.financial_income, yr)[3];
-      const finExp  = Math.abs(getYTD(IS.financial_expenses, yr)[3] ?? 0);
-      const tax     = Math.abs(getYTD(IS.tax, yr)[3] ?? 0);
-      const cfOp  = getPeriodValues(CF.operating.total, 'ytd', yr)[3] ?? null;
-      const cfCap = getPeriodValues(CF.investing.capex, 'ytd', yr)[3] ?? null;
-      const cfNet = getPeriodValues(CF.summary.net_change, 'ytd', yr)[3] ?? null;
-      const eps   = getEPSYTD(yr)[3] ?? null;
+    const annual = allYears.slice(0, -1).map(yr => {
+      const cfOp  = aE(ROW.cf_op,  yr);
+      const capex = aE(ROW.capex,  yr);
+      const cashEnd   = ytdRaw(ROW.cash_end,   yr, 4);
+      const cashStart = ytdRaw(ROW.cash_start, yr, 1);
+      const cfNet = (cashEnd != null && cashStart != null) ? toEUR(cashEnd - cashStart, yr) : null;
       return {
-        label: yr, revenue: rev, net_profit: np, gross_profit: gp, ebit: eb,
-        cogs, sellExp, adminExp, otherExp, finInc, finExp, tax,
-        cf_op: cfOp, cf_fcf: (cfOp !== null && cfCap !== null ? cfOp + cfCap : null), cf_net: cfNet, eps,
-        sourceYear: yr,
-        shareCount: getShareCountAnnual(yr)
+        label: yr,
+        revenue:      aE(ROW.revenue,     yr),
+        net_profit:   aE(ROW.net_profit,  yr),
+        gross_profit: aE(ROW.gross_profit,yr),
+        ebit:         aE(ROW.ebit,        yr),
+        cogs:     Math.abs(aE(ROW.cogs,     yr) ?? 0) || null,
+        sellExp:  Math.abs(aE(ROW.sell_exp, yr) ?? 0) || null,
+        adminExp: Math.abs(aE(ROW.admin_exp,yr) ?? 0) || null,
+        otherExp: Math.abs(aE(ROW.other_exp,yr) ?? 0) || null,
+        finInc:   aE(ROW.fin_inc, yr),
+        finExp:   Math.abs(aE(ROW.fin_exp, yr) ?? 0) || null,
+        tax:      Math.abs(aE(ROW.tax,     yr) ?? 0) || null,
+        cf_op: cfOp, cf_fcf: cfOp != null && capex != null ? cfOp + capex : null, cf_net: cfNet,
+        eps: aEPS(yr), sourceYear: yr, shareCount: sharesForYear(yr),
       };
     });
 
-    // Single LTM bar: sum of last 4 available quarters
+    // Collect all available quarters
     const allQ = [];
-    for (const yr of YEARS) {
-      const revQ    = getQuarterly(IS.revenue, yr);
-      const npQ     = getQuarterly(IS.net_profit, yr);
-      const gpQ     = getQuarterly(IS.gross_profit, yr);
-      const ebQ     = getQuarterly(IS.ebit, yr);
-      const cogsQ   = getQuarterly(IS.cogs, yr).map(v => Math.abs(v ?? 0));
-      const sellQ   = getQuarterly(IS.selling_expenses, yr).map(v => Math.abs(v ?? 0));
-      const adminQ  = getQuarterly(IS.admin_expenses, yr).map(v => Math.abs(v ?? 0));
-      const otherQ  = getQuarterly(IS.other_operating_expenses, yr).map(v => Math.abs(v ?? 0));
-      const finIncQ = getQuarterly(IS.financial_income, yr);
-      const finExpQ = getQuarterly(IS.financial_expenses, yr).map(v => Math.abs(v ?? 0));
-      const taxQ    = getQuarterly(IS.tax, yr).map(v => Math.abs(v ?? 0));
-      const cfOpQ   = getPeriodValues(CF.operating.total, 'quarterly', yr);
-      const cfCapYTD = getPeriodValues(CF.investing.capex, 'ytd', yr);
-      const cfCapQ  = [
-        cfCapYTD[0],
-        cfCapYTD[1] !== null && cfCapYTD[0] !== null ? cfCapYTD[1] - cfCapYTD[0] : null,
-        cfCapYTD[2] !== null && cfCapYTD[1] !== null ? cfCapYTD[2] - cfCapYTD[1] : null,
-        cfCapYTD[3] !== null && cfCapYTD[2] !== null ? cfCapYTD[3] - cfCapYTD[2] : null,
-      ];
-      const cfNetQ  = getPeriodValues(CF.summary.net_change, 'quarterly', yr);
-      const epsQ    = getEPSQuarterly(yr);
-      for (let i = 0; i < 4; i++) {
-        if (revQ[i] !== null) {
-          allQ.push({
-            labelShort: `Q${i+1}'${yr.slice(2)}`, yr, qi: i,
-            revenue: revQ[i], net_profit: npQ[i], gross_profit: gpQ[i], ebit: ebQ[i],
-            cogs: cogsQ[i], sellExp: sellQ[i], adminExp: adminQ[i], otherExp: otherQ[i],
-            finInc: finIncQ[i], finExp: finExpQ[i], tax: taxQ[i],
-            cf_op: cfOpQ[i], cf_cap: cfCapQ[i], cf_net: cfNetQ[i],
-            eps: epsQ[i],
-            sourceYear: yr,
-            quarter: i + 1,
-            shareCount: getShareCount(yr, i + 1)
-          });
-        }
+    for (const yr of allYears) {
+      for (let q = 1; q <= 4; q++) {
+        if (ytdRaw(ROW.revenue, yr, q) == null) continue;
+        const label = `Q${q}'${yr.slice(2)}`;
+        const pt = isPoint(yr, q, label);
+        pt.eps = qEPS(yr, q);
+        pt.cf_cap = qE(ROW.capex, yr, q);
+        pt.labelShort = label;
+        allQ.push(pt);
       }
     }
     if (allQ.length >= 4) {
       const w4 = allQ.slice(-4);
       const sumQ = key => {
         const vals = w4.map(q => q[key]);
-        return vals.some(v => v === null) ? null : vals.reduce((a, b) => a + b, 0);
+        return vals.some(v => v == null) ? null : vals.reduce((a, b) => a + b, 0);
       };
       const last = w4[3];
       const cfOp = sumQ('cf_op');
       const cfCap = sumQ('cf_cap');
-      result.push({
+      annual.push({
         label: `LTM ${last.labelShort}`,
         revenue: sumQ('revenue'), net_profit: sumQ('net_profit'),
         gross_profit: sumQ('gross_profit'), ebit: sumQ('ebit'),
         cogs: sumQ('cogs'), sellExp: sumQ('sellExp'), adminExp: sumQ('adminExp'), otherExp: sumQ('otherExp'),
         finInc: sumQ('finInc'), finExp: sumQ('finExp'), tax: sumQ('tax'),
         cf_op: cfOp,
-        cf_fcf: cfOp !== null && cfCap !== null ? cfOp + cfCap : null,
+        cf_fcf: cfOp != null && cfCap != null ? cfOp + cfCap : null,
         cf_net: sumQ('cf_net'),
-        eps: (() => { const vals = w4.map(q => q.eps); return vals.every(v => v !== null) ? vals.reduce((a,b)=>a+b,0) : null; })(),
-        sourceYear: last.sourceYear,
-        quarter: last.quarter,
-        shareCount: last.shareCount
+        eps: (() => { const vals = w4.map(q => q.eps); return vals.every(v => v != null) ? vals.reduce((a,b)=>a+b,0) : null; })(),
+        sourceYear: last.sourceYear, quarter: last.quarter, shareCount: last.shareCount,
       });
     }
-    return result;
+    return annual;
   }
   return [];
 }
 
-function extractBSPoint(bs, i, year) {
-  const lc = bs.liabilities.current;
-  const lnc = bs.liabilities.non_current;
-  const bankLoansSt = (lc.bank_loans || lc.bank_loans_st || {}).values?.[i] || 0;
-  const bankLoansLt = (lnc.bank_loans_lt || {}).values?.[i] || 0;
-  const leaseSt = lc.lease_st?.values?.[i] || 0;
-  const leaseLt = lnc.lease_lt?.values?.[i] || 0;
-  return {
-    assets: convertMoneyValue(bs.assets.total.values[i], year),
-    current_assets: convertMoneyValue(bs.assets.current.total.values[i], year),
-    liabilities: convertMoneyValue(bs.liabilities.total.values[i], year),
-    current_liabilities: convertMoneyValue(lc.total.values[i], year),
-    equity: convertMoneyValue(bs.equity.total.values[i], year),
-    cash: convertMoneyValue(bs.assets.current.cash.values[i], year),
-    recv: convertMoneyValue(bs.assets.current.trade_receivables.values[i], year),
-    re: convertMoneyValue(bs.equity.retained_earnings.values[i], year),
-    inventories: convertMoneyValue(bs.assets.current.inventories?.values?.[i] || 0, year),
-    bank_loans: convertMoneyValue(bankLoansSt + bankLoansLt, year),
-    bank_loans_st: convertMoneyValue(bankLoansSt, year),
-    lease_st: convertMoneyValue(leaseSt, year),
-    lease_lt: convertMoneyValue(leaseLt, year),
-    trade_payables: convertMoneyValue(lc.trade_payables?.values?.[i] || 0, year),
-    sourceYear: year,
-  };
-}
-
+// ── Build balance data ────────────────────────────────────────────────────────
 function buildBalanceData() {
-  const bs21 = D.balance_sheet_2021;
-  const bs22 = D.balance_sheet_2022;
-  const bs23 = D.balance_sheet_2023;
-  const bs24 = D.balance_sheet_2024_original;
-  const bs25 = D.balance_sheet;
-
   if (currentMode === 'annual') {
-    return [
-      ...(bs21 ? [{ label: '2021', ...extractBSPoint(bs21, 4, '2021') }] : []),
-      { label: '2022', ...extractBSPoint(bs22, 4, '2022') },
-      { label: '2023', ...extractBSPoint(bs23, 4, '2023') },
-      { label: '2024', ...extractBSPoint(bs24, 4, '2024') },
-      { label: '2025', ...extractBSPoint(bs25, 4, '2025') },
-    ];
+    return allYears
+      .map(yr => bsPoint(yr, 4, yr))
+      .filter(b => b.assets != null);
   }
 
   if (currentMode === 'quarterly') {
     const result = [];
-    const quarters = [
-      ...(activeYears.has('2021') && bs21 ? [
-        { label: "Q1'21", bs: bs21, i: 1, year: '2021' },
-        { label: "Q2'21", bs: bs21, i: 2, year: '2021' },
-        { label: "Q3'21", bs: bs21, i: 3, year: '2021' },
-        { label: "Q4'21", bs: bs21, i: 4, year: '2021' }
-      ] : []),
-      ...(activeYears.has('2022') ? [
-        { label: "Q1'22", bs: bs22, i: 1, year: '2022' }, { label: "Q2'22", bs: bs22, i: 2, year: '2022' },
-        { label: "Q3'22", bs: bs22, i: 3, year: '2022' }, { label: "Q4'22", bs: bs22, i: 4, year: '2022' }
-      ] : []),
-      ...(activeYears.has('2023') ? [
-        { label: "Q1'23", bs: bs23, i: 1, year: '2023' }, { label: "Q2'23", bs: bs23, i: 2, year: '2023' },
-        { label: "Q3'23", bs: bs23, i: 3, year: '2023' }, { label: "Q4'23", bs: bs23, i: 4, year: '2023' }
-      ] : []),
-      ...(activeYears.has('2024') ? [
-        { label: "Q1'24", bs: bs24, i: 1, year: '2024' }, { label: "Q2'24", bs: bs24, i: 2, year: '2024' },
-        { label: "Q3'24", bs: bs24, i: 3, year: '2024' }, { label: "Q4'24", bs: bs24, i: 4, year: '2024' }
-      ] : []),
-      ...(activeYears.has('2025') ? [
-        { label: "Q1'25", bs: bs25, i: 1, year: '2025' }, { label: "Q2'25", bs: bs25, i: 2, year: '2025' },
-        { label: "Q3'25", bs: bs25, i: 3, year: '2025' }, { label: "Q4'25", bs: bs25, i: 4, year: '2025' }
-      ] : []),
-    ];
-    for (const q of quarters) {
-      result.push({ label: q.label, ...extractBSPoint(q.bs, q.i, q.year) });
+    for (const yr of allYears) {
+      if (!activeYears.has(yr)) continue;
+      for (let q = 1; q <= 4; q++) {
+        if (ytdRaw(ROW.total_assets, yr, q) == null) continue;
+        result.push(bsPoint(yr, q, `Q${q}'${yr.slice(2)}`));
+      }
     }
     return result;
   }
 
   if (currentMode === 'ltm') {
-    // Annual year-end snapshots for 2021–2024
-    const annual = [
-      ...(bs21 ? [{ label: '2021', bs: bs21, i: 4 }] : []),
-      { label: '2022', bs: bs22, i: 4 },
-      { label: '2023', bs: bs23, i: 4 },
-      { label: '2024', bs: bs24, i: 4 },
-    ];
-    // Latest available quarter snapshot (from bs25, or fall back to bs24)
-    const candidates = [
-      { label: "Q4'25", bs: bs25, i: 4, year: '2025' },
-      { label: "Q3'25", bs: bs25, i: 3, year: '2025' },
-      { label: "Q2'25", bs: bs25, i: 2, year: '2025' },
-      { label: "Q1'25", bs: bs25, i: 1, year: '2025' },
-      { label: "Q4'24", bs: bs24, i: 4, year: '2024' },
-    ];
-    const latestBS = candidates.find(c => c.bs?.assets?.total?.values?.[c.i] != null);
-    return [
-      ...annual.map(q => ({ label: q.label, ...extractBSPoint(q.bs, q.i, q.label) })),
-      ...(latestBS ? [{ label: `LTM ${latestBS.label}`, ...extractBSPoint(latestBS.bs, latestBS.i, latestBS.year) }] : [])
-    ];
+    const annual = allYears.slice(0, -1)
+      .map(yr => bsPoint(yr, 4, yr))
+      .filter(b => b.assets != null);
+    // Latest available quarter
+    let latest = null;
+    outer: for (let yi = allYears.length - 1; yi >= 0; yi--) {
+      const yr = allYears[yi];
+      for (let q = 4; q >= 1; q--) {
+        if (ytdRaw(ROW.total_assets, yr, q) != null) {
+          latest = bsPoint(yr, q, `LTM Q${q}'${yr.slice(2)}`);
+          break outer;
+        }
+      }
+    }
+    return [...annual, ...(latest ? [latest] : [])];
   }
   return [];
 }
 
-const CHART_COLORS = {
-  blue:    '#0090D4',
-  blueA:   'rgba(0,144,212,0.18)',
-  green:   '#16A34A',
-  greenA:  'rgba(22,163,74,0.18)',
-  navy:    '#1A2E5A',
-  navyA:   'rgba(26,46,90,0.18)',
-  amber:   '#D97706',
-  amberA:  'rgba(217,119,6,0.18)',
-  red:     '#DC2626',
-  redA:    'rgba(220,38,38,0.18)',
-  gray:    '#94A3B8',
-  grayA:   'rgba(148,163,184,0.18)',
-  teal:    '#0D9488',
-  tealA:   'rgba(13,148,136,0.18)',
-  purple:  '#8B5CF6',
-  purpleA: 'rgba(139,92,246,0.18)',
-  pink:    '#EC4899',
-  pinkA:   'rgba(236,72,153,0.18)',
-  cyan:    '#14B8A6',
-  cyanA:   'rgba(20,184,166,0.18)',
-  lime:    '#84CC16',
-  limeA:   'rgba(132,204,22,0.18)',
-  indigo:  '#6366F1',
-  indigoA: 'rgba(99,102,241,0.18)',
+// ── Chart colors ──────────────────────────────────────────────────────────────
+const C = {
+  blue:'#0090D4', blueA:'rgba(0,144,212,0.18)',
+  green:'#16A34A', greenA:'rgba(22,163,74,0.18)',
+  navy:'#1A2E5A', navyA:'rgba(26,46,90,0.18)',
+  amber:'#D97706', amberA:'rgba(217,119,6,0.18)',
+  red:'#DC2626', redA:'rgba(220,38,38,0.18)',
+  gray:'#94A3B8', grayA:'rgba(148,163,184,0.18)',
+  teal:'#0D9488', tealA:'rgba(13,148,136,0.18)',
+  purple:'#8B5CF6', purpleA:'rgba(139,92,246,0.18)',
+  pink:'#EC4899', pinkA:'rgba(236,72,153,0.18)',
+  cyan:'#14B8A6', cyanA:'rgba(20,184,166,0.18)',
+  lime:'#84CC16', limeA:'rgba(132,204,22,0.18)',
+  indigo:'#6366F1', indigoA:'rgba(99,102,241,0.18)',
 };
 
-const BASE_CHART_OPTIONS = {
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: { duration: 400 },
+const BASE_OPTS = {
+  responsive: true, maintainAspectRatio: false, animation: { duration: 400 },
   plugins: {
     legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 12, padding: 12 } },
-    tooltip: {
-      mode: 'index',
-      intersect: false,
-      backgroundColor: '#1E293B',
-      titleFont: { size: 11, weight: '600' },
-      bodyFont: { size: 11 },
-      padding: 10,
-      cornerRadius: 6,
-    }
+    tooltip: { mode: 'index', intersect: false, backgroundColor: '#1E293B', titleFont: { size: 11, weight: '600' }, bodyFont: { size: 11 }, padding: 10, cornerRadius: 6 }
   },
   scales: {
     x: { grid: { display: false }, ticks: { font: { size: 10 } } },
@@ -439,1224 +491,692 @@ const BASE_CHART_OPTIONS = {
   }
 };
 
-function mkChart(id, config) {
-  const ctx = document.getElementById(id).getContext('2d');
-  if (charts[id]) charts[id].destroy();
-  charts[id] = new Chart(ctx, config);
-  return charts[id];
+function cloneOpts(extra = {}) {
+  return JSON.parse(JSON.stringify({ ...BASE_OPTS, ...extra }));
 }
 
+function mkChart(id, config) {
+  const ctx = document.getElementById(id)?.getContext('2d');
+  if (!ctx) return;
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart(ctx, config);
+}
+
+// ── KPI ───────────────────────────────────────────────────────────────────────
 function updateKPIs(series) {
   const last = series[series.length - 1];
   const prev = series.length >= 2 ? series[series.length - 2] : null;
 
   document.getElementById('kpi-revenue').textContent = fmtAmountCompact(last?.revenue);
-  if (prev && prev.revenue && last.revenue) {
+  if (prev?.revenue && last?.revenue) {
     const ch = (last.revenue - prev.revenue) / Math.abs(prev.revenue) * 100;
     document.getElementById('kpi-revenue-yoy').innerHTML = yoySpan(ch) + ' г/г';
   }
   document.getElementById('kpi-revenue-period').textContent = last?.label || '';
 
   document.getElementById('kpi-netprofit').textContent = fmtAmountCompact(last?.net_profit);
-  if (prev && prev.net_profit && last.net_profit) {
+  if (prev?.net_profit && last?.net_profit) {
     const ch = (last.net_profit - prev.net_profit) / Math.abs(prev.net_profit) * 100;
     document.getElementById('kpi-netprofit-yoy').innerHTML = yoySpan(ch) + ' г/г';
   }
   document.getElementById('kpi-netprofit-period').textContent = last?.label || '';
 
-  const ebitM = last && last.revenue ? (last.ebit / last.revenue * 100) : null;
-  document.getElementById('kpi-ebitmargin').textContent = ebitM !== null ? fmtPct(ebitM) : '–';
-  if (last && last.revenue && last.ebit !== null) {
-    const cls = ebitM >= 0 ? 'positive' : 'negative';
+  const ebitM = last?.revenue ? (last.ebit / last.revenue * 100) : null;
+  document.getElementById('kpi-ebitmargin').textContent = ebitM != null ? fmtPct(ebitM) : '–';
+  if (last?.ebit != null) {
+    const cls = (ebitM ?? 0) >= 0 ? 'positive' : 'negative';
     document.getElementById('kpi-ebitmargin-sub').innerHTML = `<span class="${cls}">EBIT: ${fmtAmountCompact(last.ebit)}</span>`;
   }
   document.getElementById('kpi-ebitmargin-period').textContent = last?.label || '';
 
-  const eps25 = getEPSYTD('2025')[3];
-  const eps24 = getEPSYTD('2024')[3];
-  document.getElementById('kpi-eps').textContent = eps25 !== null ? fmtPerShare(eps25) : '–';
-  if (eps25 && eps24) {
-    const ch = (eps25 - eps24) / Math.abs(eps24) * 100;
+  // EPS: compare last two available annual years
+  const ly = allYears[allYears.length - 1];
+  const py = allYears[allYears.length - 2];
+  const epsLast = ly ? aEPS(ly) : null;
+  const epsPrev = py ? aEPS(py) : null;
+  document.getElementById('kpi-eps').textContent = epsLast != null ? fmtPerShare(epsLast) : '–';
+  if (epsLast && epsPrev) {
+    const ch = (epsLast - epsPrev) / Math.abs(epsPrev) * 100;
     document.getElementById('kpi-eps-yoy').innerHTML = yoySpan(ch) + ' г/г';
   }
-  document.getElementById('kpi-eps-period').textContent = 'FY 2025 vs FY 2024';
+  document.getElementById('kpi-eps-period').textContent = ly && py ? `FY ${ly} vs FY ${py}` : '';
 }
 
+// ── Charts ────────────────────────────────────────────────────────────────────
 function renderRevenueChart(series) {
-  const labels = series.map(s => s.label);
-  const revenues = series.map(s => s.revenue);
-  const profits = series.map(s => s.net_profit);
-
-  mkChart('chart-revenue', {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [
-        { label: 'Приходи', data: revenues, backgroundColor: CHART_COLORS.blueA, borderColor: CHART_COLORS.blue, borderWidth: 1.5, borderRadius: 4 },
-        { label: 'Нетна печалба', data: profits, backgroundColor: CHART_COLORS.greenA, borderColor: CHART_COLORS.green, borderWidth: 1.5, borderRadius: 4 }
-      ]
-    },
-    options: {
-      ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
-      plugins: {
-        ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtAmountTooltip(ctx.parsed.y)}` } }
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
-        y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => fmtBGN(v) } }
-      }
-    }
-  });
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => ` ${ctx.dataset.label}: ${fmtAmountTooltip(ctx.parsed.y)}` };
+  opts.scales.y.ticks.callback = v => fmtBGN(v);
+  mkChart('chart-revenue', { type: 'bar', data: { labels: series.map(s => s.label), datasets: [
+    { label: 'Приходи', data: series.map(s => s.revenue), backgroundColor: C.blueA, borderColor: C.blue, borderWidth: 1.5, borderRadius: 4 },
+    { label: 'Нетна печалба', data: series.map(s => s.net_profit), backgroundColor: C.greenA, borderColor: C.green, borderWidth: 1.5, borderRadius: 4 }
+  ]}, options: opts });
 }
 
 function renderMarginsChart(series) {
-  const labels = series.map(s => s.label);
-  const grossM = series.map(s => s.revenue ? (s.gross_profit / s.revenue * 100) : null);
-  const ebitM  = series.map(s => s.revenue ? (s.ebit / s.revenue * 100) : null);
-  const netM   = series.map(s => s.revenue ? (s.net_profit / s.revenue * 100) : null);
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(1)}%` };
+  opts.scales.y.ticks.callback = v => v.toFixed(0) + '%';
+  mkChart('chart-margins', { type: 'line', data: { labels: series.map(s => s.label), datasets: [
+    { label: 'Брутен марж', data: series.map(s => s.revenue ? s.gross_profit/s.revenue*100 : null), borderColor: C.blue, backgroundColor: C.blueA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false },
+    { label: 'EBIT марж', data: series.map(s => s.revenue ? s.ebit/s.revenue*100 : null), borderColor: C.amber, backgroundColor: C.amberA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false },
+    { label: 'Нетен марж', data: series.map(s => s.revenue ? s.net_profit/s.revenue*100 : null), borderColor: C.green, backgroundColor: C.greenA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false }
+  ]}, options: opts });
+}
 
-  mkChart('chart-margins', {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        { label: 'Брутен марж', data: grossM, borderColor: CHART_COLORS.blue, backgroundColor: CHART_COLORS.blueA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false },
-        { label: 'EBIT марж', data: ebitM, borderColor: CHART_COLORS.amber, backgroundColor: CHART_COLORS.amberA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false },
-        { label: 'Нетен марж', data: netM, borderColor: CHART_COLORS.green, backgroundColor: CHART_COLORS.greenA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false }
-      ]
-    },
-    options: {
-      ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
-      plugins: {
-        ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(1)}%` } }
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
-        y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => v.toFixed(0) + '%' } }
-      }
+function renderYoYGrowthChart(series) {
+  const revG = [], npG = [];
+  if (currentMode === 'annual') {
+    for (let i = 0; i < series.length; i++) {
+      if (i === 0) { revG.push(null); npG.push(null); continue; }
+      const p = series[i-1];
+      revG.push(p.revenue && series[i].revenue ? (series[i].revenue - p.revenue)/Math.abs(p.revenue)*100 : null);
+      npG.push(p.net_profit && series[i].net_profit ? (series[i].net_profit - p.net_profit)/Math.abs(p.net_profit)*100 : null);
     }
-  });
+  } else if (currentMode === 'quarterly') {
+    for (const s of series) {
+      const m = s.label.match(/Q(\d)'(\d\d)/);
+      if (!m) { revG.push(null); npG.push(null); continue; }
+      const qi = parseInt(m[1]);
+      const yr = '20' + m[2];
+      const prevYr = String(+yr - 1);
+      if (!allYears.includes(prevYr)) { revG.push(null); npG.push(null); continue; }
+      const pr = qE(ROW.revenue,    prevYr, qi);
+      const pn = qE(ROW.net_profit, prevYr, qi);
+      revG.push(pr && s.revenue  ? (s.revenue    - pr)/Math.abs(pr)*100 : null);
+      npG.push (pn && s.net_profit ? (s.net_profit - pn)/Math.abs(pn)*100 : null);
+    }
+  } else {
+    for (let i = 0; i < series.length; i++) {
+      if (i < 4) { revG.push(null); npG.push(null); continue; }
+      const p = series[i-4];
+      revG.push(p.revenue && series[i].revenue ? (series[i].revenue - p.revenue)/Math.abs(p.revenue)*100 : null);
+      npG.push(p.net_profit && series[i].net_profit ? (series[i].net_profit - p.net_profit)/Math.abs(p.net_profit)*100 : null);
+    }
+  }
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(1)}%` };
+  opts.scales.y.ticks.callback = v => v.toFixed(0) + '%';
+  mkChart('chart-yoy-growth', { type: 'line', data: { labels: series.map(s => s.label), datasets: [
+    { label: 'Приходи г/г %', data: revG, borderColor: C.blue, backgroundColor: C.blueA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false },
+    { label: 'Нетна печалба г/г %', data: npG, borderColor: C.green, backgroundColor: C.greenA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false }
+  ]}, options: opts });
 }
 
 function renderExpenseBreakdownChart(series) {
-  const labels = series.map(s => s.label);
-  mkChart('chart-expense-breakdown', {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [
-        { label: 'Брутна печалба', data: series.map(s => s.gross_profit), backgroundColor: CHART_COLORS.green, borderWidth: 1 },
-        { label: 'Разходи за продажби', data: series.map(s => -s.sellExp), backgroundColor: CHART_COLORS.red, borderWidth: 1 },
-        { label: 'Админ. разходи', data: series.map(s => -s.adminExp), backgroundColor: CHART_COLORS.amber, borderWidth: 1 },
-        { label: 'Други разходи', data: series.map(s => -s.otherExp), backgroundColor: CHART_COLORS.gray, borderWidth: 1 },
-        { label: 'Себестойност', data: series.map(s => -s.cogs), backgroundColor: CHART_COLORS.navy, borderWidth: 1 }
-      ]
-    },
-    options: {
-      ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
-      plugins: {
-        ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtAmountTooltip(ctx.parsed.y, true)}` } }
-      },
-      scales: {
-        x: { stacked: true, grid: { display: false }, ticks: { font: { size: 10 } } },
-        y: { stacked: true, grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => fmtBGN(Math.abs(v)) } }
-      }
-    }
-  });
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => ` ${ctx.dataset.label}: ${fmtAmountTooltip(ctx.parsed.y, true)}` };
+  opts.scales.x = { stacked: true, grid: { display: false }, ticks: { font: { size: 10 } } };
+  opts.scales.y = { stacked: true, grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => fmtBGN(Math.abs(v)) } };
+  mkChart('chart-expense-breakdown', { type: 'bar', data: { labels: series.map(s => s.label), datasets: [
+    { label: 'Брутна печалба', data: series.map(s => s.gross_profit), backgroundColor: C.green, borderWidth: 1 },
+    { label: 'Разходи за продажби', data: series.map(s => -(s.sellExp||0)), backgroundColor: C.red, borderWidth: 1 },
+    { label: 'Админ. разходи', data: series.map(s => -(s.adminExp||0)), backgroundColor: C.amber, borderWidth: 1 },
+    { label: 'Други разходи', data: series.map(s => -(s.otherExp||0)), backgroundColor: C.gray, borderWidth: 1 },
+    { label: 'Себестойност', data: series.map(s => -(s.cogs||0)), backgroundColor: C.navy, borderWidth: 1 }
+  ]}, options: opts });
 }
 
 function renderCashflowChart(series) {
-  const labels = series.map(s => s.label);
-  mkChart('chart-cashflow', {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [
-        { label: 'Оперативен CF', data: series.map(s => s.cf_op), backgroundColor: CHART_COLORS.blueA, borderColor: CHART_COLORS.blue, borderWidth: 1.5, borderRadius: 4 },
-        { label: 'FCF', data: series.map(s => s.cf_fcf), backgroundColor: CHART_COLORS.greenA, borderColor: CHART_COLORS.green, borderWidth: 1.5, borderRadius: 4 },
-        { label: 'Нетна промяна в пари', data: series.map(s => s.cf_net), backgroundColor: CHART_COLORS.grayA, borderColor: CHART_COLORS.gray, borderWidth: 1.5, borderRadius: 4 },
-      ]
-    },
-    options: {
-      ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
-      plugins: {
-        ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtAmountTooltip(ctx.parsed.y)}` } }
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
-        y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => fmtBGN(v) } }
-      }
-    }
-  });
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => ` ${ctx.dataset.label}: ${fmtAmountTooltip(ctx.parsed.y)}` };
+  opts.scales.y.ticks.callback = v => fmtBGN(v);
+  mkChart('chart-cashflow', { type: 'bar', data: { labels: series.map(s => s.label), datasets: [
+    { label: 'Оперативен CF', data: series.map(s => s.cf_op), backgroundColor: C.blueA, borderColor: C.blue, borderWidth: 1.5, borderRadius: 4 },
+    { label: 'FCF', data: series.map(s => s.cf_fcf), backgroundColor: C.greenA, borderColor: C.green, borderWidth: 1.5, borderRadius: 4 },
+    { label: 'Нетна промяна в пари', data: series.map(s => s.cf_net), backgroundColor: C.grayA, borderColor: C.gray, borderWidth: 1.5, borderRadius: 4 }
+  ]}, options: opts });
 }
 
 function renderFCFChart(series) {
-  const labels = series.map(s => s.label);
   const fcf = series.map(s => s.cf_fcf);
-  const avg = fcf.filter(v => v !== null).reduce((a,b) => a+b, 0) / fcf.filter(v => v !== null).length;
-  
-  mkChart('chart-fcf', {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [{
-        label: `FCF (${DISPLAY_AMOUNT_UNIT})`,
-        data: fcf,
-        backgroundColor: fcf.map(v => v !== null && v >= 0 ? CHART_COLORS.greenA : CHART_COLORS.redA),
-        borderColor: fcf.map(v => v !== null && v >= 0 ? CHART_COLORS.green : CHART_COLORS.red),
-        borderWidth: 1.5,
-        borderRadius: 4
-      }]
-    },
-    options: {
-      ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
-      plugins: {
-        ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` FCF: ${fmtAmountTooltip(ctx.parsed.y)}` } }
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
-        y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => fmtBGN(v) } }
-      }
-    }
-  });
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => ` FCF: ${fmtAmountTooltip(ctx.parsed.y)}` };
+  opts.scales.y.ticks.callback = v => fmtBGN(v);
+  mkChart('chart-fcf', { type: 'bar', data: { labels: series.map(s => s.label), datasets: [{
+    label: `FCF (${DISPLAY_AMOUNT_UNIT})`, data: fcf,
+    backgroundColor: fcf.map(v => v != null && v >= 0 ? C.greenA : C.redA),
+    borderColor: fcf.map(v => v != null && v >= 0 ? C.green : C.red),
+    borderWidth: 1.5, borderRadius: 4
+  }]}, options: opts });
 }
 
 function renderInterestCoverageChart(series) {
-  const labels = series.map(s => s.label);
-  const coverage = series.map(s => {
-    if (s.ebit === null || s.ebit <= 0) return null;
-    const finExp = s.finExp || 0;
-    if (finExp <= 0) return null;
-    return s.ebit / finExp;
-  });
-
-  mkChart('chart-interest-coverage', {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [{
-        label: 'Покритие (x)',
-        data: coverage,
-        backgroundColor: coverage.map(v => v !== null && v >= 1 ? CHART_COLORS.greenA : CHART_COLORS.redA),
-        borderColor: coverage.map(v => v !== null && v >= 1 ? CHART_COLORS.green : CHART_COLORS.red),
-        borderWidth: 1.5,
-        borderRadius: 4
-      }]
-    },
-    options: {
-      ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
-      plugins: {
-        ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` Покритие: ${ctx.parsed.y?.toFixed(1)}x` } }
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
-        y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => v.toFixed(0) + 'x' }, beginAtZero: true }
-      }
-    }
-  });
+  const cov = series.map(s => (s.ebit > 0 && s.finExp > 0) ? s.ebit / s.finExp : null);
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => ` Покритие: ${ctx.parsed.y?.toFixed(1)}x` };
+  opts.scales.y.ticks.callback = v => v.toFixed(0) + 'x';
+  opts.scales.y.beginAtZero = true;
+  mkChart('chart-interest-coverage', { type: 'bar', data: { labels: series.map(s => s.label), datasets: [{
+    label: 'Покритие (x)', data: cov,
+    backgroundColor: cov.map(v => v != null && v >= 1 ? C.greenA : C.redA),
+    borderColor: cov.map(v => v != null && v >= 1 ? C.green : C.red),
+    borderWidth: 1.5, borderRadius: 4
+  }]}, options: opts });
 }
 
 function renderEarningsQualityChart(series) {
-  const labels = series.map(s => s.label);
-  const quality = series.map(s => {
-    if (s.cf_op === null || s.net_profit === null || s.net_profit === 0) return null;
-    return s.cf_op / s.net_profit;
-  });
-
-  mkChart('chart-earnings-quality', {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [{
-        label: 'OCF / Нетна печалба',
-        data: quality,
-        borderColor: CHART_COLORS.pink,
-        backgroundColor: CHART_COLORS.pinkA,
-        tension: 0.3,
-        pointRadius: 4,
-        borderWidth: 2,
-        fill: false
-      }]
-    },
-    options: {
-      ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
-      plugins: {
-        ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` Качество: ${ctx.parsed.y?.toFixed(2)}x` } }
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
-        y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => v.toFixed(1) + 'x' }, beginAtZero: false }
-      }
-    }
-  });
+  const q = series.map(s => (s.cf_op != null && s.net_profit) ? s.cf_op / s.net_profit : null);
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => ` Качество: ${ctx.parsed.y?.toFixed(2)}x` };
+  opts.scales.y.ticks.callback = v => v.toFixed(1) + 'x';
+  opts.scales.y.beginAtZero = false;
+  mkChart('chart-earnings-quality', { type: 'line', data: { labels: series.map(s => s.label), datasets: [{
+    label: 'OCF / Нетна печалба', data: q, borderColor: C.pink, backgroundColor: C.pinkA, tension: 0.3, pointRadius: 4, borderWidth: 2, fill: false
+  }]}, options: opts });
 }
 
 function renderBalanceChart(bsData) {
-  const labels = bsData.map(b => b.label);
-  mkChart('chart-balance', {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [
-        { label: 'Собствен капитал', data: bsData.map(b => b.equity), backgroundColor: 'rgba(22,163,74,0.7)', borderColor: CHART_COLORS.green, borderWidth: 1, borderRadius: { topLeft: 4, topRight: 4, bottomLeft: 0, bottomRight: 0 }, stack: 'bs' },
-        { label: 'Пасиви', data: bsData.map(b => b.liabilities), backgroundColor: 'rgba(220,38,38,0.55)', borderColor: CHART_COLORS.red, borderWidth: 1, borderRadius: 0, stack: 'bs' }
-      ]
-    },
-    options: {
-      ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
-      plugins: {
-        ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtAmountTooltip(ctx.parsed.y)}`, footer: items => `Общо активи: ${fmtAmountTooltip(items.reduce((a,i) => a + (i.parsed.y || 0), 0))}` } }
-      },
-      scales: {
-        x: { stacked: true, grid: { display: false }, ticks: { font: { size: 10 } } },
-        y: { stacked: true, grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => fmtBGN(v) } }
-      }
-    }
-  });
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = {
+    label: ctx => ` ${ctx.dataset.label}: ${fmtAmountTooltip(ctx.parsed.y)}`,
+    footer: items => `Общо активи: ${fmtAmountTooltip(items.reduce((a,i)=>a+(i.parsed.y||0),0))}`
+  };
+  opts.scales.x = { stacked: true, grid: { display: false }, ticks: { font: { size: 10 } } };
+  opts.scales.y = { stacked: true, grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => fmtBGN(v) } };
+  mkChart('chart-balance', { type: 'bar', data: { labels: bsData.map(b => b.label), datasets: [
+    { label: 'Собствен капитал', data: bsData.map(b => b.equity), backgroundColor: 'rgba(22,163,74,0.7)', borderColor: C.green, borderWidth: 1, borderRadius: { topLeft:4,topRight:4,bottomLeft:0,bottomRight:0 }, stack: 'bs' },
+    { label: 'Пасиви', data: bsData.map(b => b.liabilities), backgroundColor: 'rgba(220,38,38,0.55)', borderColor: C.red, borderWidth: 1, borderRadius: 0, stack: 'bs' }
+  ]}, options: opts });
 }
 
 function renderAssetGrowthChart(bsData) {
-  const labels = bsData.map(b => b.label);
-  mkChart('chart-asset-growth', {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        { label: 'Общо активи', data: bsData.map(b => b.assets), borderColor: CHART_COLORS.navy, backgroundColor: CHART_COLORS.navyA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false },
-        { label: 'Собствен капитал', data: bsData.map(b => b.equity), borderColor: CHART_COLORS.green, backgroundColor: CHART_COLORS.greenA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false },
-        { label: 'Пари', data: bsData.map(b => b.cash), borderColor: CHART_COLORS.teal, backgroundColor: CHART_COLORS.tealA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false }
-      ]
-    },
-    options: {
-      ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
-      plugins: {
-        ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtAmountTooltip(ctx.parsed.y)}` } }
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
-        y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => fmtBGN(v) } }
-      }
-    }
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => ` ${ctx.dataset.label}: ${fmtAmountTooltip(ctx.parsed.y)}` };
+  opts.scales.y.ticks.callback = v => fmtBGN(v);
+  mkChart('chart-asset-growth', { type: 'line', data: { labels: bsData.map(b => b.label), datasets: [
+    { label: 'Общо активи', data: bsData.map(b => b.assets), borderColor: C.navy, backgroundColor: C.navyA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false },
+    { label: 'Собствен капитал', data: bsData.map(b => b.equity), borderColor: C.green, backgroundColor: C.greenA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false },
+    { label: 'Пари', data: bsData.map(b => b.cash), borderColor: C.teal, backgroundColor: C.tealA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false }
+  ]}, options: opts });
+}
+
+function renderNetDebtChart(bsData) {
+  const netDebt = bsData.map(b => {
+    const totalDebt = (b.bank_loans||0) + (b.lease_st||0) + (b.lease_lt||0);
+    return totalDebt - (b.cash||0);
   });
+  const deRatio = bsData.map(b => (b.equity && b.equity !== 0) ? b.liabilities/b.equity : null);
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => ctx.datasetIndex === 0 ? ` Нетен дълг: ${fmtAmountTooltip(ctx.parsed.y)}` : ` D/E: ${ctx.parsed.y?.toFixed(2)}` };
+  opts.scales.y = { position: 'left', grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => fmtBGN(v) }, title: { display: true, text: DISPLAY_AMOUNT_UNIT, font: { size: 10 } } };
+  opts.scales.y2 = { position: 'right', grid: { display: false }, ticks: { font: { size: 10 }, callback: v => v.toFixed(2) }, title: { display: true, text: 'D/E', font: { size: 10 } }, beginAtZero: true };
+  mkChart('chart-net-debt', { type: 'bar', data: { labels: bsData.map(b => b.label), datasets: [
+    { label: `Нетен дълг (${DISPLAY_AMOUNT_UNIT})`, data: netDebt, backgroundColor: netDebt.map(v=>v>=0?C.redA:C.greenA), borderColor: netDebt.map(v=>v>=0?C.red:C.green), borderWidth: 1.5, borderRadius: 4, yAxisID: 'y', order: 2 },
+    { label: 'D/E', data: deRatio, type: 'line', borderColor: C.navy, backgroundColor: C.navyA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false, yAxisID: 'y2', order: 1 }
+  ]}, options: opts });
 }
 
 function renderLiquidityChart(bsData) {
-  const labels = bsData.map(b => b.label);
-  const currentRatio = bsData.map(b => {
-    if (!b.current_assets || !b.current_liabilities) return null;
-    return b.current_liabilities > 0 ? b.current_assets / b.current_liabilities : null;
-  });
-  const quickRatio = bsData.map(b => {
-    if (b.cash === null || b.recv === null || !b.current_liabilities) return null;
-    return b.current_liabilities > 0 ? (b.cash + b.recv) / b.current_liabilities : null;
-  });
-
-  mkChart('chart-liquidity', {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        { label: 'Текущо съотношение', data: currentRatio, borderColor: CHART_COLORS.amber, backgroundColor: CHART_COLORS.amberA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false },
-        { label: 'Бързо съотношение', data: quickRatio, borderColor: CHART_COLORS.teal, backgroundColor: CHART_COLORS.tealA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false }
-      ]
-    },
-    options: {
-      ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
-      plugins: {
-        ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(2)}` } }
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
-        y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => v.toFixed(1) }, beginAtZero: true }
-      }
-    }
-  });
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(2)}` };
+  opts.scales.y.ticks.callback = v => v.toFixed(1);
+  opts.scales.y.beginAtZero = true;
+  mkChart('chart-liquidity', { type: 'line', data: { labels: bsData.map(b => b.label), datasets: [
+    { label: 'Текущо съотношение', data: bsData.map(b => (b.current_assets && b.current_liabilities) ? b.current_assets/b.current_liabilities : null), borderColor: C.amber, backgroundColor: C.amberA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false },
+    { label: 'Бързо съотношение', data: bsData.map(b => (b.cash != null && b.recv != null && b.current_liabilities) ? (b.cash+b.recv)/b.current_liabilities : null), borderColor: C.teal, backgroundColor: C.tealA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false }
+  ]}, options: opts });
 }
 
 function renderDuPontChart(series, bsData) {
-  const labels = series.map(s => s.label);
-  const netMargin = series.map(s => s.revenue ? (s.net_profit / s.revenue * 100) : null);
-  const assetTurnover = series.map((s, i) => {
-    const bs = bsData[i];
-    if (!s.revenue || !bs?.assets) return null;
-    return s.revenue / bs.assets;
-  });
-  const equityMult = bsData.map(b => {
-    if (!b?.assets || !b?.equity || b.equity === 0) return null;
-    return b.assets / b.equity;
-  });
-  const roe = series.map((s, i) => {
-    const nm = netMargin[i];
-    const at = assetTurnover[i];
-    const em = equityMult[i];
-    if (nm === null || at === null || em === null) return null;
-    return (nm / 100) * at * em * 100;
-  });
-
-  mkChart('chart-dupont', {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        { label: 'Нетен марж %', data: netMargin, borderColor: CHART_COLORS.red, backgroundColor: CHART_COLORS.redA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false, yAxisID: 'y' },
-        { label: 'Оборот на активи', data: assetTurnover, borderColor: CHART_COLORS.amber, backgroundColor: CHART_COLORS.amberA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false, yAxisID: 'y2' },
-        { label: 'Ливъридж', data: equityMult, borderColor: CHART_COLORS.purple, backgroundColor: CHART_COLORS.purpleA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false, yAxisID: 'y2' },
-        { label: 'ROE %', data: roe, borderColor: CHART_COLORS.green, backgroundColor: CHART_COLORS.greenA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false, yAxisID: 'y' }
-      ]
-    },
-    options: {
-      ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
-      plugins: {
-        ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: {
-          label: ctx => {
-            const v = ctx.parsed.y;
-            if (v === null || v === undefined) return '';
-            if (ctx.datasetIndex === 1 || ctx.datasetIndex === 2) return ` ${ctx.dataset.label}: ${v.toFixed(2)}x`;
-            return ` ${ctx.dataset.label}: ${v.toFixed(1)}%`;
-          }
-        }}
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
-        y: { position: 'left', grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => v.toFixed(0) + '%' }, title: { display: true, text: '%', font: { size: 10 } } },
-        y2: { position: 'right', grid: { display: false }, ticks: { font: { size: 10 }, callback: v => v.toFixed(1) + 'x' }, title: { display: true, text: 'x', font: { size: 10 } } }
-      }
-    }
-  });
+  const netM = series.map(s => s.revenue ? s.net_profit/s.revenue*100 : null);
+  const assetTurn = series.map((s,i) => (s.revenue && bsData[i]?.assets) ? s.revenue/bsData[i].assets : null);
+  const equityM = bsData.map(b => (b.assets && b.equity && b.equity !== 0) ? b.assets/b.equity : null);
+  const roe = series.map((s,i) => (netM[i] != null && assetTurn[i] != null && equityM[i] != null) ? (netM[i]/100)*assetTurn[i]*equityM[i]*100 : null);
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => { const v=ctx.parsed.y; if(v==null)return''; return (ctx.datasetIndex===1||ctx.datasetIndex===2)?` ${ctx.dataset.label}: ${v.toFixed(2)}x`:` ${ctx.dataset.label}: ${v.toFixed(1)}%`; } };
+  opts.scales.y = { position: 'left', grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => v.toFixed(0)+'%' }, title: { display: true, text: '%', font: { size: 10 } } };
+  opts.scales.y2 = { position: 'right', grid: { display: false }, ticks: { font: { size: 10 }, callback: v => v.toFixed(1)+'x' }, title: { display: true, text: 'x', font: { size: 10 } } };
+  mkChart('chart-dupont', { type: 'line', data: { labels: series.map(s=>s.label), datasets: [
+    { label: 'Нетен марж %', data: netM, borderColor: C.red, backgroundColor: C.redA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false, yAxisID: 'y' },
+    { label: 'Оборот на активи', data: assetTurn, borderColor: C.amber, backgroundColor: C.amberA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false, yAxisID: 'y2' },
+    { label: 'Ливъридж', data: equityM, borderColor: C.purple, backgroundColor: C.purpleA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false, yAxisID: 'y2' },
+    { label: 'ROE %', data: roe, borderColor: C.green, backgroundColor: C.greenA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false, yAxisID: 'y' }
+  ]}, options: opts });
 }
 
 function renderReceivablesChart(series, bsData) {
-  const labels = series.map(s => s.label);
-  const recvDays = series.map((s, i) => {
-    const bs = bsData[i];
-    if (s.revenue === null || bs?.recv === null || s.revenue === 0) return null;
-    if (currentMode === 'quarterly') {
-      return (bs.recv / s.revenue) * 90;
-    } else if (currentMode === 'annual') {
-      return (bs.recv / s.revenue) * 365;
-    } else {
-      return (bs.recv / s.revenue) * 90;
-    }
-  });
-
-  mkChart('chart-receivables', {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [{
-        label: 'Вземния в дни',
-        data: recvDays,
-        borderColor: CHART_COLORS.indigo,
-        backgroundColor: CHART_COLORS.indigoA,
-        tension: 0.3,
-        pointRadius: 4,
-        borderWidth: 2,
-        fill: false
-      }]
-    },
-    options: {
-      ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
-      plugins: {
-        ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${ctx.parsed.y?.toFixed(0)} дни` } }
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
-        y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => v.toFixed(0) + ' дни' }, beginAtZero: true }
-      }
-    }
-  });
+  const df = currentMode === 'annual' ? 365 : 90;
+  const recvDays = series.map((s,i) => (s.revenue && bsData[i]?.recv != null && s.revenue !== 0) ? (bsData[i].recv/s.revenue)*df : null);
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => ` ${ctx.parsed.y?.toFixed(0)} дни` };
+  opts.scales.y.ticks.callback = v => v.toFixed(0)+' дни';
+  opts.scales.y.beginAtZero = true;
+  mkChart('chart-receivables', { type: 'line', data: { labels: series.map(s=>s.label), datasets: [{
+    label: 'Вземания в дни', data: recvDays, borderColor: C.indigo, backgroundColor: C.indigoA, tension: 0.3, pointRadius: 4, borderWidth: 2, fill: false
+  }]}, options: opts });
 }
 
 function renderSeasonalityChart() {
-  const years = ['2022', '2023', '2024', '2025'];
-  const qLabels = ['Q1', 'Q2', 'Q3', 'Q4'];
-  const datasets = years.map((yr, idx) => {
-    const IS = D.income_statement.items;
-    const rev = getQuarterly(IS.revenue, yr);
-    const colors = [CHART_COLORS.blue, CHART_COLORS.green, CHART_COLORS.amber, CHART_COLORS.navy];
-    return {
-      label: yr,
-      data: rev,
-      backgroundColor: colors[idx] + '40',
-      borderColor: colors[idx],
-      borderWidth: 2,
-      borderRadius: 4
-    };
-  });
+  const years = allYears.slice(-4);
+  const colors = [C.blue, C.green, C.amber, C.navy, C.teal, C.purple];
+  const datasets = years.map((yr, idx) => ({
+    label: yr,
+    data: [1,2,3,4].map(q => qE(ROW.revenue, yr, q)),
+    backgroundColor: colors[idx % colors.length] + '40',
+    borderColor: colors[idx % colors.length],
+    borderWidth: 2, borderRadius: 4
+  }));
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => ` ${ctx.dataset.label}: ${fmtAmountTooltip(ctx.parsed.y)}` };
+  opts.scales.y.ticks.callback = v => fmtBGN(v);
+  opts.scales.y.beginAtZero = true;
+  mkChart('chart-seasonality', { type: 'bar', data: { labels: ['Q1','Q2','Q3','Q4'], datasets }, options: opts });
+}
 
-  mkChart('chart-seasonality', {
-    type: 'bar',
-    data: {
-      labels: qLabels,
-      datasets
-    },
-    options: {
-      ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
-      plugins: {
-        ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtAmountTooltip(ctx.parsed.y)}` } }
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
-        y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => fmtBGN(v) }, beginAtZero: true }
-      }
-    }
+function renderWorkingCapitalChart(series, bsData) {
+  const df = currentMode === 'annual' ? 365 : 90;
+  const invD = series.map((s,i) => (bsData[i]?.inventories && s.cogs) ? (bsData[i].inventories/s.cogs)*df : null);
+  const recD = series.map((s,i) => (bsData[i]?.recv && s.revenue) ? (bsData[i].recv/s.revenue)*df : null);
+  const payD = series.map((s,i) => (bsData[i]?.trade_payables && s.cogs) ? (bsData[i].trade_payables/s.cogs)*df : null);
+  const ccc  = series.map((s,i) => (invD[i] != null && recD[i] != null && payD[i] != null) ? invD[i]+recD[i]-payD[i] : null);
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(0)} дни` };
+  opts.scales.y.ticks.callback = v => v.toFixed(0)+' дни';
+  mkChart('chart-working-capital', { type: 'line', data: { labels: series.map(s=>s.label), datasets: [
+    { label: 'Дни запаси', data: invD, borderColor: C.amber, backgroundColor: C.amberA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false },
+    { label: 'Дни вземания', data: recD, borderColor: C.blue, backgroundColor: C.blueA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false },
+    { label: 'Дни задължения', data: payD, borderColor: C.red, backgroundColor: C.redA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false },
+    { label: 'CCC (дни)', data: ccc, borderColor: C.navy, backgroundColor: C.navyA, tension: 0.3, pointRadius: 4, borderWidth: 2.5, fill: false, borderDash: [5,3] }
+  ]}, options: opts });
+}
+
+function renderDividendsChart() {
+  const divYears = allYears.filter(yr => {
+    const v = ytdRaw(ROW.dividends, yr, 4);
+    return v != null && v !== 0;
   });
+  const divAbs = divYears.map(yr => {
+    const v = ytdRaw(ROW.dividends, yr, 4);
+    return v != null ? toEUR(Math.abs(v), yr) : 0;
+  });
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => ` ${fmtAmountTooltip(ctx.parsed.y)}` };
+  opts.scales.y.ticks.callback = v => fmtBGN(v);
+  opts.scales.y.beginAtZero = true;
+  mkChart('chart-dividends', { type: 'bar', data: { labels: divYears, datasets: [{
+    label: `Дивиденти (${DISPLAY_AMOUNT_UNIT})`, data: divAbs, backgroundColor: C.greenA, borderColor: C.green, borderWidth: 1.5, borderRadius: 4
+  }]}, options: opts });
+}
+
+function renderDividendPerShareChart() {
+  const divYears = allYears.filter(yr => {
+    const v = ytdRaw(ROW.dividends, yr, 4);
+    return v != null && v !== 0;
+  });
+  const dps = divYears.map(yr => {
+    const div = toEUR(Math.abs(ytdRaw(ROW.dividends, yr, 4) || 0), yr);
+    const shares = sharesForYear(yr);
+    return (div > 0 && shares > 0) ? (div * 1000) / shares : 0;
+  });
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => ` ${fmtPerShare(ctx.parsed.y)}/акция` };
+  opts.scales.y.ticks.callback = v => fmtPerShare(v);
+  opts.scales.y.beginAtZero = true;
+  mkChart('chart-dps', { type: 'bar', data: { labels: divYears, datasets: [{
+    label: `Дивидент/акция (${DISPLAY_PER_SHARE_UNIT})`, data: dps, backgroundColor: C.navyA, borderColor: C.navy, borderWidth: 1.5, borderRadius: 4
+  }]}, options: opts });
+}
+
+function renderPayoutRatioChart() {
+  const divYears = allYears.filter(yr => {
+    const v = ytdRaw(ROW.dividends, yr, 4);
+    return v != null && v !== 0;
+  });
+  const payout = divYears.map(yr => {
+    const div = toEUR(Math.abs(ytdRaw(ROW.dividends, yr, 4) || 0), yr);
+    const np = aE(ROW.net_profit, yr);
+    return (div > 0 && np > 0) ? div/np*100 : null;
+  });
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => ` ${ctx.parsed.y?.toFixed(1)}%` };
+  opts.scales.y.ticks.callback = v => v.toFixed(0)+'%';
+  opts.scales.y.beginAtZero = true;
+  mkChart('chart-payout', { type: 'line', data: { labels: divYears, datasets: [{
+    label: 'Коефициент на изплащане %', data: payout, borderColor: C.amber, backgroundColor: C.amberA, tension: 0.3, pointRadius: 4, borderWidth: 2, fill: false
+  }]}, options: opts });
 }
 
 function renderEPSvsFCFChart(series) {
-  const labels = series.map(s => s.label);
   const epsData = series.map(s => s.eps);
-  const fcfPerShare = series.map(s => s.cf_fcf !== null && s.shareCount ? (s.cf_fcf * 1000) / s.shareCount : null);
-
-  mkChart('chart-eps-fcf', {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [
-        { label: `EPS (${DISPLAY_PER_SHARE_UNIT})`, data: epsData, backgroundColor: CHART_COLORS.navyA, borderColor: CHART_COLORS.navy, borderWidth: 1.5, borderRadius: 4 },
-        { label: `FCF/акция (${DISPLAY_PER_SHARE_UNIT})`, data: fcfPerShare, backgroundColor: CHART_COLORS.tealA, borderColor: CHART_COLORS.teal, borderWidth: 1.5, borderRadius: 4 }
-      ]
-    },
-    options: {
-      ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
-      plugins: {
-        ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtPerShare(ctx.parsed.y)}` } }
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
-        y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => fmtPerShare(v) } }
-      }
-    }
-  });
+  const fcfPS = series.map(s => (s.cf_fcf != null && s.shareCount) ? (s.cf_fcf * 1000) / s.shareCount : null);
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => ` ${ctx.dataset.label}: ${fmtPerShare(ctx.parsed.y)}` };
+  opts.scales.y.ticks.callback = v => fmtPerShare(v);
+  mkChart('chart-eps-fcf', { type: 'bar', data: { labels: series.map(s=>s.label), datasets: [
+    { label: `EPS (${DISPLAY_PER_SHARE_UNIT})`, data: epsData, backgroundColor: C.navyA, borderColor: C.navy, borderWidth: 1.5, borderRadius: 4 },
+    { label: `FCF/акция (${DISPLAY_PER_SHARE_UNIT})`, data: fcfPS, backgroundColor: C.tealA, borderColor: C.teal, borderWidth: 1.5, borderRadius: 4 }
+  ]}, options: opts });
 }
 
+function renderBVPSChart() {
+  const labels = [], values = [];
+  if (currentMode === 'annual' || currentMode === 'ltm') {
+    for (const yr of allYears) {
+      const eq = ytdRaw(ROW.equity, yr, 4);
+      const shares = sharesForYear(yr);
+      if (eq != null) { labels.push(yr); values.push(toEUR((eq * 1000) / shares, yr)); }
+    }
+  } else {
+    for (const yr of allYears) {
+      for (let q = 1; q <= 4; q++) {
+        const eq = ytdRaw(ROW.equity, yr, q);
+        if (eq == null) continue;
+        const shares = sharesForYear(yr);
+        labels.push(`Q${q}'${yr.slice(2)}`);
+        values.push(toEUR((eq * 1000) / shares, yr));
+      }
+    }
+  }
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => ` BVPS: ${fmtPerShare(ctx.parsed.y)}` };
+  opts.scales.y.ticks.callback = v => fmtPerShare(v, 1);
+  mkChart('chart-bvps', { type: 'line', data: { labels, datasets: [{
+    label: `BVPS (${DISPLAY_PER_SHARE_UNIT})`, data: values, borderColor: C.navy, backgroundColor: C.navyA, tension: 0.3, pointRadius: 4, borderWidth: 2, fill: true
+  }]}, options: opts });
+}
+
+// ── Tables ────────────────────────────────────────────────────────────────────
 function renderIncomeTable(series) {
-  const thead = document.getElementById('income-thead');
-  const tbody = document.getElementById('income-tbody');
-
-  const cols = series.map(s => s.label);
-  thead.innerHTML = '<th>Показател</th>' + cols.map(c => `<th>${c}</th>`).join('');
-
+  document.getElementById('income-thead').innerHTML =
+    '<th>Показател</th>' + series.map(s => `<th>${s.label}</th>`).join('');
   const rows = [
-    { key: 'revenue', label: 'Приходи', bold: true },
-    { key: 'gross_profit', label: 'Брутна печалба', bold: true },
-    { key: 'ebit', label: 'EBIT', bold: true },
-    { key: 'net_profit', label: 'Нетна печалба', bold: true, sep: true },
-    { key: 'gross_margin', label: 'Брутен марж %', isMargin: true },
+    { key: 'revenue',     label: 'Приходи', bold: true },
+    { key: 'gross_profit',label: 'Брутна печалба', bold: true },
+    { key: 'ebit',        label: 'EBIT', bold: true },
+    { key: 'net_profit',  label: 'Нетна печалба', bold: true, sep: true },
+    { key: 'gross_margin',label: 'Брутен марж %', isMargin: true },
     { key: 'ebit_margin', label: 'EBIT марж %', isMargin: true },
-    { key: 'net_margin', label: 'Нетен марж %', isMargin: true },
+    { key: 'net_margin',  label: 'Нетен марж %', isMargin: true },
   ];
-
-  tbody.innerHTML = rows.map(row => {
-    const tr_class = row.sep ? 'separator' : (row.isMargin ? 'margin-row' : '');
+  document.getElementById('income-tbody').innerHTML = rows.map(row => {
+    const cls = row.sep ? 'separator' : row.isMargin ? 'margin-row' : '';
     const cells = series.map(s => {
-      let val;
-      if (row.key === 'gross_margin') val = s.revenue ? s.gross_profit / s.revenue * 100 : null;
-      else if (row.key === 'ebit_margin') val = s.revenue ? s.ebit / s.revenue * 100 : null;
-      else if (row.key === 'net_margin') val = s.revenue ? s.net_profit / s.revenue * 100 : null;
-      else val = s[row.key];
-      return numCell(val, row.isMargin);
+      let v;
+      if      (row.key === 'gross_margin') v = s.revenue ? s.gross_profit/s.revenue*100 : null;
+      else if (row.key === 'ebit_margin')  v = s.revenue ? s.ebit/s.revenue*100 : null;
+      else if (row.key === 'net_margin')   v = s.revenue ? s.net_profit/s.revenue*100 : null;
+      else v = s[row.key];
+      return numCell(v, row.isMargin);
     }).join('');
-    const tdLabel = row.bold ? `<td><strong>${row.label}</strong></td>` : `<td>${row.label}</td>`;
-    return `<tr class="${tr_class}">${tdLabel}${cells}</tr>`;
+    const lbl = row.bold ? `<td><strong>${row.label}</strong></td>` : `<td>${row.label}</td>`;
+    return `<tr class="${cls}">${lbl}${cells}</tr>`;
   }).join('');
 }
 
 function renderBalanceTable(bsData) {
-  const thead = document.getElementById('balance-thead');
-  const tbody = document.getElementById('balance-tbody');
-
-  thead.innerHTML = '<th>Показател</th>' + bsData.map(b => `<th>${b.label}</th>`).join('');
-
+  document.getElementById('balance-thead').innerHTML =
+    '<th>Показател</th>' + bsData.map(b => `<th>${b.label}</th>`).join('');
   const rows = [
-    { key: 'assets', label: 'Общо активи', bold: true },
-    { key: 'cash', label: 'Пари' },
-    { key: 'recv', label: 'Търговски вземания' },
-    { key: 'equity', label: 'Собствен капитал', bold: true, sep: true },
+    { key: 'assets',      label: 'Общо активи', bold: true },
+    { key: 'cash',        label: 'Пари' },
+    { key: 'recv',        label: 'Търговски вземания' },
+    { key: 'equity',      label: 'Собствен капитал', bold: true, sep: true },
     { key: 'liabilities', label: 'Общо пасиви' },
-    { key: 'de', label: 'D/E коефициент', isRatio: true },
+    { key: 'de',          label: 'D/E коефициент', isRatio: true },
   ];
-
-  tbody.innerHTML = rows.map(row => {
-    const tr_class = row.sep ? 'separator' : '';
+  document.getElementById('balance-tbody').innerHTML = rows.map(row => {
+    const cls = row.sep ? 'separator' : '';
     const cells = bsData.map(b => {
-      let val;
       if (row.key === 'de') {
-        val = b.equity && b.equity !== 0 ? b.liabilities / b.equity : null;
-        if (val !== null) {
-          const cls = val > 1 ? 'negative' : '';
-          return `<td class="${cls}">${val.toFixed(2)}</td>`;
-        }
-        return '<td>–</td>';
+        const v = (b.equity && b.equity !== 0) ? b.liabilities/b.equity : null;
+        if (v == null) return '<td>–</td>';
+        return `<td class="${v > 1 ? 'negative' : ''}">${v.toFixed(2)}</td>`;
       }
-      val = b[row.key];
-      return numCell(val, false);
+      return numCell(b[row.key], false);
     }).join('');
-    const tdLabel = row.bold ? `<td><strong>${row.label}</strong></td>` : `<td>${row.label}</td>`;
-    return `<tr class="${tr_class}">${tdLabel}${cells}</tr>`;
+    const lbl = row.bold ? `<td><strong>${row.label}</strong></td>` : `<td>${row.label}</td>`;
+    return `<tr class="${cls}">${lbl}${cells}</tr>`;
   }).join('');
 }
 
-function getShareCount(year, quarter) {
-  const s = D.per_share.shares;
-  if (year === '2025' && (quarter === 3 || quarter === 4)) return s.q3_q4_2025;
-  if (year === '2025') return s.q1_q2_2025;
-  return s[year] || 18000000;
-}
-
-function getShareCountAnnual(year) {
-  const s = D.per_share.shares;
-  if (year === '2025') return s.q3_q4_2025;
-  return s[year] || 18000000;
-}
-
-function renderYoYGrowthChart(series) {
-  const labels = series.map(s => s.label);
-  const revGrowth = [];
-  const npGrowth = [];
-
-  if (currentMode === 'annual') {
-    for (let i = 0; i < series.length; i++) {
-      if (i === 0) { revGrowth.push(null); npGrowth.push(null); continue; }
-      const prev = series[i - 1];
-      revGrowth.push(prev.revenue && series[i].revenue ? ((series[i].revenue - prev.revenue) / Math.abs(prev.revenue) * 100) : null);
-      npGrowth.push(prev.net_profit && series[i].net_profit ? ((series[i].net_profit - prev.net_profit) / Math.abs(prev.net_profit) * 100) : null);
-    }
-  } else if (currentMode === 'quarterly') {
-    const IS = D.income_statement.items;
-    for (const s of series) {
-      const m = s.label.match(/Q(\d)'(\d\d)/);
-      if (!m) { revGrowth.push(null); npGrowth.push(null); continue; }
-      const qi = parseInt(m[1]) - 1;
-      const yr = '20' + m[2];
-      const prevYr = String(parseInt(yr) - 1);
-      const prevRevQ = getQuarterly(IS.revenue, prevYr);
-      const prevNpQ = getQuarterly(IS.net_profit, prevYr);
-      const pr = prevRevQ[qi]; const pn = prevNpQ[qi];
-      revGrowth.push(pr && s.revenue ? ((s.revenue - pr) / Math.abs(pr) * 100) : null);
-      npGrowth.push(pn && s.net_profit ? ((s.net_profit - pn) / Math.abs(pn) * 100) : null);
-    }
-  } else {
-    for (let i = 0; i < series.length; i++) {
-      if (i < 4) { revGrowth.push(null); npGrowth.push(null); continue; }
-      const prev = series[i - 4];
-      revGrowth.push(prev.revenue && series[i].revenue ? ((series[i].revenue - prev.revenue) / Math.abs(prev.revenue) * 100) : null);
-      npGrowth.push(prev.net_profit && series[i].net_profit ? ((series[i].net_profit - prev.net_profit) / Math.abs(prev.net_profit) * 100) : null);
-    }
-  }
-
-  mkChart('chart-yoy-growth', {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        { label: 'Приходи г/г %', data: revGrowth, borderColor: CHART_COLORS.blue, backgroundColor: CHART_COLORS.blueA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false },
-        { label: 'Нетна печалба г/г %', data: npGrowth, borderColor: CHART_COLORS.green, backgroundColor: CHART_COLORS.greenA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false }
-      ]
-    },
-    options: {
-      ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
-      plugins: {
-        ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(1)}%` } }
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
-        y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => v.toFixed(0) + '%' } }
-      }
-    }
-  });
-}
-
-function renderDividendsChart() {
-  const divItem = D.cash_flows.items.financing.dividends_paid;
-  const years = ['2022', '2023', '2024', '2025'];
-  const divAbs = years.map(yr => {
-    const ytd = divItem[`ytd_${yr}`] || divItem[`ytd_${yr}_original`];
-    return ytd ? convertMoneyValue(Math.abs(ytd[3]), yr) : 0;
-  });
-
-  mkChart('chart-dividends', {
-    type: 'bar',
-    data: {
-      labels: years,
-      datasets: [{
-        label: `Дивиденти (${DISPLAY_AMOUNT_UNIT})`,
-        data: divAbs,
-        backgroundColor: CHART_COLORS.greenA,
-        borderColor: CHART_COLORS.green,
-        borderWidth: 1.5,
-        borderRadius: 4
-      }]
-    },
-    options: {
-      ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
-      plugins: {
-        ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${fmtAmountTooltip(ctx.parsed.y)}` } }
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
-        y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => fmtBGN(v) }, beginAtZero: true }
-      }
-    }
-  });
-}
-
-function renderDividendPerShareChart() {
-  const divItem = D.cash_flows.items.financing.dividends_paid;
-  const years = ['2022', '2023', '2024', '2025'];
-  const dps = years.map(yr => {
-    const ytd = divItem[`ytd_${yr}`] || divItem[`ytd_${yr}_original`];
-    const div = ytd ? convertMoneyValue(Math.abs(ytd[3]), yr) : 0;
-    const shares = getShareCountAnnual(yr);
-    return div > 0 ? (div * 1000) / shares : 0;
-  });
-
-  mkChart('chart-dps', {
-    type: 'bar',
-    data: {
-      labels: years,
-      datasets: [{
-        label: `Дивидент/акция (${DISPLAY_PER_SHARE_UNIT})`,
-        data: dps,
-        backgroundColor: CHART_COLORS.navyA,
-        borderColor: CHART_COLORS.navy,
-        borderWidth: 1.5,
-        borderRadius: 4
-      }]
-    },
-    options: {
-      ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
-      plugins: {
-        ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${fmtPerShare(ctx.parsed.y)}/акция` } }
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
-        y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => fmtPerShare(v) }, beginAtZero: true }
-      }
-    }
-  });
-}
-
-function renderPayoutRatioChart() {
-  const divItem = D.cash_flows.items.financing.dividends_paid;
-  const IS = D.income_statement.items;
-  const years = ['2022', '2023', '2024', '2025'];
-  const payout = years.map(yr => {
-    const ytd = divItem[`ytd_${yr}`] || divItem[`ytd_${yr}_original`];
-    const div = ytd ? convertMoneyValue(Math.abs(ytd[3]), yr) : 0;
-    const np = getYTD(IS.net_profit, yr)[3];
-    return (div > 0 && np > 0) ? (div / np * 100) : null;
-  });
-
-  mkChart('chart-payout', {
-    type: 'line',
-    data: {
-      labels: years,
-      datasets: [{
-        label: 'Коефициент на изплащане %',
-        data: payout,
-        borderColor: CHART_COLORS.amber,
-        backgroundColor: CHART_COLORS.amberA,
-        tension: 0.3,
-        pointRadius: 4,
-        borderWidth: 2,
-        fill: false
-      }]
-    },
-    options: {
-      ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
-      plugins: {
-        ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${ctx.parsed.y?.toFixed(1)}%` } }
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
-        y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => v.toFixed(0) + '%' }, beginAtZero: true }
-      }
-    }
-  });
-}
-
-function renderWorkingCapitalChart(series, bsData) {
-  const labels = series.map(s => s.label);
-  const daysFactor = (currentMode === 'quarterly') ? 90 : (currentMode === 'ltm' ? 365 : 365);
-
-  const invDays = series.map((s, i) => {
-    const bs = bsData[i];
-    if (!bs?.inventories || !s.cogs || s.cogs === 0) return null;
-    return (bs.inventories / s.cogs) * daysFactor;
-  });
-  const recvDays = series.map((s, i) => {
-    const bs = bsData[i];
-    if (!bs?.recv || !s.revenue || s.revenue === 0) return null;
-    return (bs.recv / s.revenue) * daysFactor;
-  });
-  const payDays = series.map((s, i) => {
-    const bs = bsData[i];
-    if (!bs?.trade_payables || !s.cogs || s.cogs === 0) return null;
-    return (bs.trade_payables / s.cogs) * daysFactor;
-  });
-  const ccc = series.map((s, i) => {
-    if (invDays[i] === null || recvDays[i] === null || payDays[i] === null) return null;
-    return invDays[i] + recvDays[i] - payDays[i];
-  });
-
-  mkChart('chart-working-capital', {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        { label: 'Дни запаси', data: invDays, borderColor: CHART_COLORS.amber, backgroundColor: CHART_COLORS.amberA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false },
-        { label: 'Дни вземания', data: recvDays, borderColor: CHART_COLORS.blue, backgroundColor: CHART_COLORS.blueA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false },
-        { label: 'Дни задължения', data: payDays, borderColor: CHART_COLORS.red, backgroundColor: CHART_COLORS.redA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false },
-        { label: 'CCC (дни)', data: ccc, borderColor: CHART_COLORS.navy, backgroundColor: CHART_COLORS.navyA, tension: 0.3, pointRadius: 4, borderWidth: 2.5, fill: false, borderDash: [5, 3] }
-      ]
-    },
-    options: {
-      ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
-      plugins: {
-        ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(0)} дни` } }
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
-        y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => v.toFixed(0) + ' дни' } }
-      }
-    }
-  });
-}
-
-function renderNetDebtChart(bsData) {
-  const labels = bsData.map(b => b.label);
-  const netDebt = bsData.map(b => {
-    const totalDebt = (b.bank_loans || 0) + (b.lease_st || 0) + (b.lease_lt || 0);
-    return totalDebt - (b.cash || 0);
-  });
-  const deRatio = bsData.map(b => {
-    if (!b.equity || b.equity === 0) return null;
-    return b.liabilities / b.equity;
-  });
-
-  mkChart('chart-net-debt', {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [
-        {
-          label: `Нетен дълг (${DISPLAY_AMOUNT_UNIT})`,
-          data: netDebt,
-          backgroundColor: netDebt.map(v => v >= 0 ? CHART_COLORS.redA : CHART_COLORS.greenA),
-          borderColor: netDebt.map(v => v >= 0 ? CHART_COLORS.red : CHART_COLORS.green),
-          borderWidth: 1.5, borderRadius: 4, yAxisID: 'y', order: 2
-        },
-        {
-          label: 'D/E',
-          data: deRatio,
-          type: 'line',
-          borderColor: CHART_COLORS.navy,
-          backgroundColor: CHART_COLORS.navyA,
-          tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false, yAxisID: 'y2', order: 1
-        }
-      ]
-    },
-    options: {
-      ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
-      plugins: {
-        ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: {
-          label: ctx => {
-            if (ctx.datasetIndex === 0) return ` Нетен дълг: ${fmtAmountTooltip(ctx.parsed.y)}`;
-            return ` D/E: ${ctx.parsed.y?.toFixed(2)}`;
-          }
-        }}
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
-        y: { position: 'left', grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => fmtBGN(v) }, title: { display: true, text: DISPLAY_AMOUNT_UNIT, font: { size: 10 } } },
-        y2: { position: 'right', grid: { display: false }, ticks: { font: { size: 10 }, callback: v => v.toFixed(2) }, title: { display: true, text: 'D/E', font: { size: 10 } }, beginAtZero: true }
-      }
-    }
-  });
-}
-
-function renderBVPSChart() {
-  const bvps = D.per_share.book_value_per_share;
-  const labels = [];
-  const values = [];
-
-  const bs21 = D.balance_sheet_2021;
-  const bs22 = D.balance_sheet_2022;
-  const bs23 = D.balance_sheet_2023;
-
-  if (currentMode === 'annual' || currentMode === 'ltm') {
-    // 2021: compute from equity / shares (index 4 = Dec 2021)
-    if (bs21) {
-      const eq21 = bs21.equity.total.values[4];
-      labels.push('2021');
-      values.push(eq21 ? convertMoneyValue((eq21 * 1000) / getShareCountAnnual('2021'), '2021') : null);
-    }
-    // 2022: index 4 = Dec 2022
-    if (bs22) {
-      const eq22 = bs22.equity.total.values[4];
-      labels.push('2022');
-      values.push(eq22 ? convertMoneyValue((eq22 * 1000) / getShareCountAnnual('2022'), '2022') : null);
-    }
-    // 2023: index 4 = Dec 2023
-    if (bs23) {
-      const eq23 = bs23.equity.total.values[4];
-      labels.push('2023');
-      values.push(eq23 ? convertMoneyValue((eq23 * 1000) / getShareCountAnnual('2023'), '2023') : null);
-    }
-    // 2024: use original year-end value (index 4)
-    if (bvps.values_2024_original) {
-      labels.push('2024');
-      values.push(convertMoneyValue(bvps.values_2024_original[4], '2024'));
-    }
-    // 2025: year-end value (index 4)
-    if (bvps.values) {
-      labels.push('2025');
-      values.push(convertMoneyValue(bvps.values[4], '2025'));
-    }
-  } else {
-    // Quarterly / LTM: show all quarters
-    for (let i = 1; i <= 4; i++) {
-      labels.push(`Q${i}'22`);
-      const eq = bs22.equity.total.values[i];
-      values.push(eq ? convertMoneyValue((eq * 1000) / getShareCount('2022', i), '2022') : null);
-    }
-    for (let i = 1; i <= 4; i++) {
-      labels.push(`Q${i}'23`);
-      const eq = bs23.equity.total.values[i];
-      values.push(eq ? convertMoneyValue((eq * 1000) / getShareCount('2023', i), '2023') : null);
-    }
-    // 2024 from values_2024_original
-    if (bvps.values_2024_original) {
-      for (let i = 1; i <= 4; i++) {
-        labels.push(`Q${i}'24`);
-        values.push(convertMoneyValue(bvps.values_2024_original[i], '2024'));
-      }
-    }
-    // 2025 from values
-    if (bvps.values) {
-      for (let i = 1; i <= 4; i++) {
-        labels.push(`Q${i}'25`);
-        values.push(convertMoneyValue(bvps.values[i], '2025'));
-      }
-    }
-  }
-
-  mkChart('chart-bvps', {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [{
-        label: `BVPS (${DISPLAY_PER_SHARE_UNIT})`,
-        data: values,
-        borderColor: CHART_COLORS.navy,
-        backgroundColor: CHART_COLORS.navyA,
-        tension: 0.3,
-        pointRadius: 4,
-        borderWidth: 2,
-        fill: true
-      }]
-    },
-    options: {
-      ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
-      plugins: {
-        ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins)),
-        tooltip: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS.plugins.tooltip)), callbacks: { label: ctx => ` BVPS: ${fmtPerShare(ctx.parsed.y)}` } }
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
-        y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => fmtPerShare(v, 1) } }
-      }
-    }
-  });
-}
-
 function renderCashFlowTable(series) {
-  const thead = document.getElementById('cf-thead');
-  const tbody = document.getElementById('cf-tbody');
-  if (!thead || !tbody) return;
-
-  const CF = D.cash_flows.items;
   let tableData;
-
   if (currentMode === 'annual') {
-    tableData = YEARS.map(yr => ({
+    tableData = allYears.map(yr => ({
       label: yr,
-      cfOp: getPeriodValues(CF.operating.total, 'ytd', yr)[3] ?? null,
-      cfInv: getPeriodValues(CF.investing.total, 'ytd', yr)[3] ?? null,
-      cfFin: getPeriodValues(CF.financing.total, 'ytd', yr)[3] ?? null,
-      cfNet: getPeriodValues(CF.summary.net_change, 'ytd', yr)[3] ?? null,
-      capex: getPeriodValues(CF.investing.capex, 'ytd', yr)[3] ?? null,
+      cfOp:  aE(ROW.cf_op,  yr),
+      cfInv: aE(ROW.cf_inv, yr),
+      cfFin: aE(ROW.cf_fin, yr),
+      cfNet: (() => { const e=ytdRaw(ROW.cash_end,yr,4),s=ytdRaw(ROW.cash_start,yr,1); return (e!=null&&s!=null)?toEUR(e-s,yr):null; })(),
+      capex: aE(ROW.capex,  yr),
     }));
   } else if (currentMode === 'quarterly') {
     tableData = [];
-    for (const yr of YEARS) {
+    for (const yr of allYears) {
       if (!activeYears.has(yr)) continue;
-      const opQ = getPeriodValues(CF.operating.total, 'quarterly', yr);
-      const invQ = getPeriodValues(CF.investing.total, 'quarterly', yr);
-      const finQ = getPeriodValues(CF.financing.total, 'quarterly', yr);
-      const netQ = getPeriodValues(CF.summary.net_change, 'quarterly', yr);
-      const capYTD = getPeriodValues(CF.investing.capex, 'ytd', yr);
-      const capQ = [
-        capYTD[0],
-        capYTD[1] !== null && capYTD[0] !== null ? capYTD[1] - capYTD[0] : null,
-        capYTD[2] !== null && capYTD[1] !== null ? capYTD[2] - capYTD[1] : null,
-        capYTD[3] !== null && capYTD[2] !== null ? capYTD[3] - capYTD[2] : null,
-      ];
-      for (let i = 0; i < 4; i++) {
+      for (let q = 1; q <= 4; q++) {
+        if (ytdRaw(ROW.cf_op, yr, q) == null) continue;
+        const cashQ  = ytdRaw(ROW.cash_end, yr, q);
+        const cashP  = q === 1 ? ytdRaw(ROW.cash_start, yr, 1) : ytdRaw(ROW.cash_end, yr, q-1);
         tableData.push({
-          label: `Q${i+1}'${yr.slice(2)}`,
-          cfOp: opQ[i], cfInv: invQ[i], cfFin: finQ[i], cfNet: netQ[i], capex: capQ[i]
+          label: `Q${q}'${yr.slice(2)}`,
+          cfOp:  qE(ROW.cf_op,  yr, q),
+          cfInv: qE(ROW.cf_inv, yr, q),
+          cfFin: qE(ROW.cf_fin, yr, q),
+          cfNet: (cashQ!=null&&cashP!=null) ? toEUR(cashQ-cashP,yr) : null,
+          capex: qE(ROW.capex, yr, q),
         });
       }
     }
   } else {
-    tableData = series.map(s => ({
-      label: s.label, cfOp: s.cf_op, cfInv: null, cfFin: null, cfNet: s.cf_net,
-      capex: null, fcfOverride: s.cf_fcf
-    }));
+    tableData = series.map(s => ({ label: s.label, cfOp: s.cf_op, cfInv: null, cfFin: null, cfNet: s.cf_net, capex: null, fcfOverride: s.cf_fcf }));
   }
-
-  const cols = tableData.map(d => d.label);
-  thead.innerHTML = '<th>Показател</th>' + cols.map(c => `<th>${c}</th>`).join('');
-
+  document.getElementById('cf-thead').innerHTML =
+    '<th>Показател</th>' + tableData.map(d => `<th>${d.label}</th>`).join('');
   const rows = [
-    { key: 'cfOp', label: 'Оперативен CF', bold: true },
+    { key: 'cfOp',  label: 'Оперативен CF', bold: true },
     { key: 'cfInv', label: 'Инвестиционен CF' },
     { key: 'cfFin', label: 'Финансов CF' },
     { key: 'cfNet', label: 'Нетна промяна', bold: true, sep: true },
-    { key: 'fcf', label: 'FCF (Опер. + CAPEX)', bold: true },
+    { key: 'fcf',   label: 'FCF (Опер. + CAPEX)', bold: true },
   ];
-
-  tbody.innerHTML = rows.map(row => {
-    const tr_class = row.sep ? 'separator' : '';
+  document.getElementById('cf-tbody').innerHTML = rows.map(row => {
+    const cls = row.sep ? 'separator' : '';
     const cells = tableData.map(d => {
-      let val;
-      if (row.key === 'fcf') val = d.fcfOverride !== undefined ? d.fcfOverride : (d.cfOp !== null && d.capex !== null ? d.cfOp + d.capex : null);
-      else val = d[row.key];
-      return numCell(val, false);
+      const v = row.key === 'fcf'
+        ? (d.fcfOverride !== undefined ? d.fcfOverride : (d.cfOp != null && d.capex != null ? d.cfOp + d.capex : null))
+        : d[row.key];
+      return numCell(v, false);
     }).join('');
-    const tdLabel = row.bold ? `<td><strong>${row.label}</strong></td>` : `<td>${row.label}</td>`;
-    return `<tr class="${tr_class}">${tdLabel}${cells}</tr>`;
+    const lbl = row.bold ? `<td><strong>${row.label}</strong></td>` : `<td>${row.label}</td>`;
+    return `<tr class="${cls}">${lbl}${cells}</tr>`;
   }).join('');
 }
 
 function renderStockInfo() {
-  const el = document.getElementById('stock-info');
-  if (!el) return;
-  const sh = D.shareholders;
-  const sub = D.subsidiaries;
-  const totalShares = sh?.total_shares || 18157559;
-
-  let holdersHtml = '';
-  if (sh?.holders) {
-    holdersHtml = sh.holders.map(h =>
-      `<div class="holder-item"><span class="holder-name">${h.name}</span><span class="holder-pct">${h.pct.toFixed(2)}%</span><span class="holder-shares">${fmtNum(h.shares)} акции</span></div>`
-    ).join('');
-  }
-
-  const domesticCount = sub?.domestic?.length || 0;
-  const foreignCount = sub?.foreign?.length || 0;
-
-  el.innerHTML = `
-    <div class="info-block">
-      <div class="info-block-title">Акционери</div>
-      <div class="info-block-subtitle">Към ${sh?.as_of || 'N/A'}</div>
-      <div class="holders-list">${holdersHtml}</div>
-    </div>
+  const infoRows = Object.entries(meta.info || {}).map(([k, v]) =>
+    `<div class="info-row"><span class="info-label">${k}</span><span class="info-value">${v}</span></div>`
+  ).join('');
+  document.getElementById('stock-info').innerHTML = `
     <div class="info-block">
       <div class="info-block-title">Корпоративна информация</div>
+      <div class="info-items">${infoRows}</div>
+    </div>
+    <div class="info-block">
+      <div class="info-block-title">Данни за периода</div>
       <div class="info-items">
-        <div class="info-row"><span class="info-label">Общо акции</span><span class="info-value">${fmtNum(totalShares)}</span></div>
-        <div class="info-row"><span class="info-label">ISIN</span><span class="info-value">BG1100003166</span></div>
-        <div class="info-row"><span class="info-label">Сектор</span><span class="info-value">IoT / Smart Home</span></div>
-        <div class="info-row"><span class="info-label">ЕИК</span><span class="info-value">${D.meta?.eik || '175440738'}</span></div>
-        <div class="info-row"><span class="info-label">Дъщерни дружества</span><span class="info-value">${domesticCount + foreignCount} (${domesticCount} BG + ${foreignCount} чужбина)</span></div>
+        <div class="info-row"><span class="info-label">Налични години</span><span class="info-value">${allYears.join(', ')}</span></div>
+        <div class="info-row"><span class="info-label">Брой периоди</span><span class="info-value">${periods.length} тримесечия</span></div>
+        <div class="info-row"><span class="info-label">Валута</span><span class="info-value">${DISPLAY_AMOUNT_UNIT}</span></div>
       </div>
     </div>
   `;
 }
 
+// ── Export CSV ────────────────────────────────────────────────────────────────
 function exportCSV() {
-  const series = buildSeriesData();
-  const bsData = buildBalanceData();
+  const series  = buildSeriesData();
+  const bsData  = buildBalanceData();
   const rows = [];
-
-  rows.push(['Валута на визуализация', 'EUR']);
-  rows.push(['Курс за периоди до 2025', BGN_PER_EUR]);
-  rows.push(['Бележка', 'Данните до 31.12.2025 са конвертирани от BGN, а данните от 2026 нататък се приемат в EUR.']);
+  rows.push(['Валута на визуализация','EUR']);
+  rows.push(['Курс за периоди до 2026', BGN_PER_EUR]);
   rows.push([]);
-
-  // Header
-  const headers = ['Показател', ...series.map(s => s.label)];
-  rows.push(headers);
-
-  // Income statement
+  rows.push(['Показател', ...series.map(s => s.label)]);
   rows.push(['--- Отчет за доходите ---']);
   rows.push(['Приходи', ...series.map(s => s.revenue)]);
   rows.push(['Брутна печалба', ...series.map(s => s.gross_profit)]);
   rows.push(['EBIT', ...series.map(s => s.ebit)]);
   rows.push(['Нетна печалба', ...series.map(s => s.net_profit)]);
-  rows.push(['Брутен марж %', ...series.map(s => s.revenue ? (s.gross_profit / s.revenue * 100).toFixed(1) : '')]);
-  rows.push(['EBIT марж %', ...series.map(s => s.revenue ? (s.ebit / s.revenue * 100).toFixed(1) : '')]);
-  rows.push(['Нетен марж %', ...series.map(s => s.revenue ? (s.net_profit / s.revenue * 100).toFixed(1) : '')]);
-
-  // Cash flows
+  rows.push(['Брутен марж %', ...series.map(s => s.revenue ? (s.gross_profit/s.revenue*100).toFixed(1) : '')]);
+  rows.push(['EBIT марж %', ...series.map(s => s.revenue ? (s.ebit/s.revenue*100).toFixed(1) : '')]);
+  rows.push(['Нетен марж %', ...series.map(s => s.revenue ? (s.net_profit/s.revenue*100).toFixed(1) : '')]);
   rows.push(['--- Парични потоци ---']);
   rows.push(['Оперативен CF', ...series.map(s => s.cf_op)]);
   rows.push(['FCF', ...series.map(s => s.cf_fcf)]);
   rows.push(['Нетна промяна', ...series.map(s => s.cf_net)]);
   rows.push(['EPS', ...series.map(s => s.eps)]);
-
-  // Balance sheet
   rows.push(['--- Баланс ---']);
-  const bsHeaders = ['Показател', ...bsData.map(b => b.label)];
-  rows.push(bsHeaders);
+  rows.push(['Показател', ...bsData.map(b => b.label)]);
   rows.push(['Общо активи', ...bsData.map(b => b.assets)]);
   rows.push(['Собствен капитал', ...bsData.map(b => b.equity)]);
   rows.push(['Общо пасиви', ...bsData.map(b => b.liabilities)]);
   rows.push(['Пари', ...bsData.map(b => b.cash)]);
   rows.push(['Вземания', ...bsData.map(b => b.recv)]);
-
-  const csvContent = rows.map(r => r.map(v => {
-    if (v === null || v === undefined) return '';
-    const str = String(v);
-    return str.includes(',') || str.includes('"') ? `"${str.replace(/"/g, '""')}"` : str;
+  const csv = rows.map(r => r.map(v => {
+    if (v == null) return '';
+    const s = String(v);
+    return s.includes(',') || s.includes('"') ? `"${s.replace(/"/g,'""')}"` : s;
   }).join(',')).join('\n');
-
-  const BOM = '\uFEFF';
-  const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = `shelly_group_${currentMode}_${new Date().toISOString().slice(0,10)}.csv`;
-  link.click();
-  URL.revokeObjectURL(link.href);
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `shelly_${currentMode}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
+// ── Refresh ───────────────────────────────────────────────────────────────────
 function refresh() {
   const series = buildSeriesData();
   const bsData = buildBalanceData();
-
   updateKPIs(series);
-
   renderRevenueChart(series);
   renderMarginsChart(series);
   renderYoYGrowthChart(series);
   renderExpenseBreakdownChart(series);
-
   renderCashflowChart(series);
   renderFCFChart(series);
   renderInterestCoverageChart(series);
   renderEarningsQualityChart(series);
-
   renderBalanceChart(bsData);
   renderAssetGrowthChart(bsData);
   renderNetDebtChart(bsData);
   renderLiquidityChart(bsData);
   renderDuPontChart(series, bsData);
-
   renderReceivablesChart(series, bsData);
-  renderWorkingCapitalChart(series, bsData);
   renderSeasonalityChart();
-
+  renderWorkingCapitalChart(series, bsData);
   renderEPSvsFCFChart(series);
   renderBVPSChart();
-
   renderDividendsChart();
   renderDividendPerShareChart();
   renderPayoutRatioChart();
-
   renderIncomeTable(series);
   renderBalanceTable(bsData);
   renderCashFlowTable(series);
-
   renderStockInfo();
-
   document.getElementById('year-filters').style.display =
     currentMode === 'quarterly' ? 'flex' : 'none';
 }
 
 function setMode(mode) {
   currentMode = mode;
-  document.querySelectorAll('.mode-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.mode === mode);
-  });
+  document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.mode === mode));
   refresh();
 }
 
 function updateYearFilter() {
   activeYears = new Set();
-  document.querySelectorAll('#year-filters input[type=checkbox]:checked').forEach(cb => {
-    activeYears.add(cb.value);
-  });
+  document.querySelectorAll('#year-filters input[type=checkbox]:checked').forEach(cb => activeYears.add(cb.value));
   refresh();
 }
 
-function deepMerge(target, source) {
-  for (const key in source) {
-    if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
-      if (!target[key]) target[key] = {};
-      deepMerge(target[key], source[key]);
+// ── CSV Parser ────────────────────────────────────────────────────────────────
+function parseCSV(text) {
+  // Handle UTF-8 BOM
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+  const rows = [];
+  let row = [], field = '', inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQ) {
+      if (ch === '"') {
+        if (text[i+1] === '"') { field += '"'; i++; }
+        else inQ = false;
+      } else field += ch;
+    } else if (ch === '"') {
+      inQ = true;
+    } else if (ch === ',') {
+      row.push(field); field = '';
+    } else if (ch === '\n') {
+      row.push(field); field = '';
+      rows.push(row); row = [];
+    } else if (ch === '\r') {
+      // skip
     } else {
-      target[key] = source[key];
+      field += ch;
     }
   }
-  return target;
+  if (field || row.length) { row.push(field); rows.push(row); }
+  return rows;
 }
 
+// ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
   try {
-    const years = ['2022', '2023', '2024', '2025'];
-    const quarters = ['Q1', 'Q2', 'Q3', 'Q4'];
+    const companyId = getCompanyId();
+    const baseUrl = `./companies/${companyId}`;
 
-    const filePromises = [];
-    for (const year of years) {
-      for (const q of quarters) {
-        filePromises.push(fetch(`./data/shelly_group_${year}_${q}.json`));
+    // 1. Load company metadata
+    const metaResp = await fetch(`${baseUrl}/meta.json`);
+    if (!metaResp.ok) throw new Error(`meta.json not found for company: ${companyId} (HTTP ${metaResp.status})`);
+    meta = await metaResp.json();
+    applyMeta(meta);
+
+    // 2. Load CSV data
+    const dataFile = meta.data_file || 'data.csv';
+    const csvResp = await fetch(`${baseUrl}/${dataFile}`);
+    if (!csvResp.ok) throw new Error(`HTTP ${csvResp.status}`);
+    const text = await csvResp.text();
+    const rows = parseCSV(text);
+    if (rows.length < 2) throw new Error('Empty CSV');
+
+    // Header row: раздел, счетоводен_ред, Q1 2021 (3М), ...
+    const headers = rows[0];
+    // Parse period columns starting at index 2
+    periods = [];
+    for (let i = 2; i < headers.length; i++) {
+      const m = headers[i].match(/Q(\d)\s+(\d{4})\s+\((\d+)М\)/);
+      if (m) periods.push({ q: +m[1], year: m[2], months: +m[3], key: headers[i], colIdx: i });
+    }
+
+    // Build allYears from periods
+    allYears = [...new Set(periods.map(p => p.year))].sort();
+
+    // Build csvData lookup
+    csvData = {};
+    for (let r = 1; r < rows.length; r++) {
+      const row = rows[r];
+      if (row.length < 3) continue;
+      const label = row[1];
+      if (!label) continue;
+      csvData[label] = {};
+      for (const p of periods) {
+        csvData[label][p.key] = row[p.colIdx] ?? '';
       }
     }
 
-    const responses = await Promise.all(filePromises);
-    const failedFiles = responses.filter(r => !r.ok);
-    if (failedFiles.length > 0) {
-      throw new Error(`Failed to load ${failedFiles.length} quarterly files`);
-    }
-
-    const jsonPromises = responses.map(r => r.json());
-    const allData = await Promise.all(jsonPromises);
-
-    // Load 2021 Q4 file separately (only Q4 exists)
-    try {
-      const resp2021 = await fetch('./data/shelly_group_2021_Q4.json');
-      if (resp2021.ok) allData.push(await resp2021.json());
-    } catch (e) {
-      console.warn('2021 Q4 data not available:', e);
-    }
-    
-    D = {};
-    for (const data of allData) {
-      deepMerge(D, data);
-    }
+    // Populate year filter checkboxes dynamically
+    // Default: check last 4 years
+    const defaultChecked = new Set(allYears.slice(-4));
+    activeYears = new Set(defaultChecked);
+    const filtersDiv = document.getElementById('year-filters');
+    filtersDiv.innerHTML = '<span class="controls-label">Години:</span>' +
+      allYears.map(yr => {
+        const checked = defaultChecked.has(yr) ? 'checked' : '';
+        return `<label><input type="checkbox" value="${yr}" ${checked} onchange="updateYearFilter()"> ${yr}</label>`;
+      }).join('');
 
     document.getElementById('loading').style.display = 'none';
     document.getElementById('dashboard').style.display = 'block';
@@ -1664,8 +1184,8 @@ async function init() {
   } catch (e) {
     document.getElementById('loading').style.display = 'none';
     document.getElementById('error-banner').style.display = 'block';
-    console.error('Failed to load quarterly data:', e);
+    console.error('Failed to load company data:', e);
   }
 }
 
-document.addEventListener('DOMContentLoaded', init);
+init();

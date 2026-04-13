@@ -1,4 +1,4 @@
-# AGENTS.md — Шелли Груп АД Финансов Дашборд
+# AGENTS.md — Финансов дашборд (multi-company)
 
 Пълна документация за структурата, данните и логиката на проекта. Предназначена за AI агенти и разработчици, които поддържат или разширяват дашборда.
 
@@ -9,52 +9,58 @@
 1. [Обзор на проекта](#1-обзор-на-проекта)
 2. [Структура на файловете](#2-структура-на-файловете)
 3. [Поток на данните](#3-поток-на-данните)
-4. [JSON схема](#4-json-схема)
+4. [CSV схема](#4-csv-схема)
 5. [Архитектура на дашборда](#5-архитектура-на-дашборда)
 6. [Графики и таблици](#6-графики-и-таблици)
-7. [Важни особености и аномалии](#7-важни-особености-и-аномалии)
+7. [Важни особености](#7-важни-особености)
 8. [Как се добавя ново тримесечие](#8-как-се-добавя-ново-тримесечие)
-9. [Как се добавя нова графика](#9-как-се-добавя-нова-графика)
-10. [Работна среда и стартиране](#10-работна-среда-и-стартиране)
+9. [Как се добавя нова компания](#9-как-се-добавя-нова-компания)
+10. [Как се добавя нова графика](#10-как-се-добавя-нова-графика)
+11. [Работна среда и стартиране](#11-работна-среда-и-стартиране)
 
 ---
 
 ## 1. Обзор на проекта
 
-Инвеститорски финансов дашборд за **Шелли Груп АД** (BSE: SLYG, XETRA: SLYG) — Bulgarian IoT / Smart Home компания. Покрива 2021–2025 (FY 2021 + Q1 2022 → Q4 2025).
+Инвеститорски финансов дашборд — статичен уебсайт, визуализиращ тримесечни и годишни финансови отчети. Поддържа **множество компании** чрез URL параметър `?company=<id>`.
 
-**Данни:** Консолидирани финансови отчети по МСФО (IFRS). Историческите JSON данни до края на 2025 са в **хиляди BGN**, но дашбордът ги визуализира в **хиляди EUR** чрез конверсия по фиксиран курс `1.95583`. Данните от 2026 нататък следва да се въвеждат директно в **EUR**.
+По подразбиране (без параметър) се зарежда **Шелли Груп АД** (BSE: SLYG, XETRA: SLYG).
+
+**Данни:** Консолидирани финансови отчети по МСФО (IFRS). Данните за Шелли до 31.12.2025 са в **хиляди BGN** и се конвертират в **хиляди EUR** (÷ 1.95583). Данните от 2026 нататък се въвеждат директно в EUR.
 
 **Технологии:**
 - Vanilla JS + Chart.js 4.4.4 — фронтенд дашборд
-- Без build step, без framework — просто static files
-
-**Еволюция на наименованието на компанията:**
-| Период | Юридическо наименование |
-|--------|------------------------|
-| 2021–2022 | ALLTERCO JSCo |
-| Q1 2023 | Allterco AD |
-| Q2–Q4 2023 | Шелли Груп АД |
-| 2024–2025 | Шелли Груп ЕД (EAD) |
+- Python 3 — генератор на CSV данни
+- Без build step, без npm, без framework — само static files
 
 ---
 
 ## 2. Структура на файловете
 
 ```
-/Users/mac/projects/shelly/
-├── README.md                        ← насочва към AGENTS.md
-├── AGENTS.md                        ← този файл
-└── docs/                            ← web root (статичен сайт)
-    ├── index.html                   ← HTML структура
-    ├── app.js                       ← цялата логика на дашборда
-    ├── styles.css                   ← CSS стилове
-    └── data/                        ← JSON файлове, по един на тримесечие/година
-        ├── shelly_group_2021_Q4.json  ← FY 2021 (само годишни данни)
-        ├── shelly_group_2022_Q1.json
-        ├── shelly_group_2022_Q2.json
+shelly/
+├── AGENTS.md                            ← този файл
+├── docs/                                ← web root (статичен сайт)
+│   ├── index.html                       ← HTML структура (company-agnostic)
+│   ├── styles.css                       ← CSS стилове
+│   ├── app.js                           ← цялата логика на дашборда
+│   └── companies/
+│       └── shelly/
+│           ├── meta.json                ← метаданни за компанията
+│           └── data.csv                 ← финансови данни (генериран файл)
+│
+└── financial_data/                      ← Python pipeline за данни
+    ├── AGENTS.md                        ← документация за pipeline-а
+    ├── generate_csv.py                  ← генератор (company-agnostic)
+    ├── validate.py                      ← валидатор (company-agnostic)
+    └── shelly/                          ← extract скриптове за Шелли
+        ├── extract_q1_2021.py
         ├── ...
-        └── shelly_group_2025_Q4.json
+        ├── extract_q4_2025.py
+        └── output/                      ← генерирани CSV файлове
+            ├── shelly_annual.csv
+            ├── shelly_quarterly_YYYY.csv
+            └── shelly_quarterly_all.csv
 ```
 
 ---
@@ -63,295 +69,231 @@
 
 ```
 PDF отчет (четен ръчно)
-       ↓  извличане на данни
-JSON файл (docs/data/shelly_group_YYYY_QN.json)  ← директно създаден/редактиран
-       ↓  fetch() + deepMerge()  (app.js init())
-Глобален обект D (in-memory)
+       ↓  ръчно кодиране
+financial_data/shelly/extract_qX_YYYY.py
+       ↓  python3 generate_csv.py shelly
+financial_data/shelly/output/shelly_quarterly_all.csv
+       ↓  автоматично копиране
+docs/companies/shelly/data.csv
+       ↓  fetch() в браузъра
+app.js parseCSV() → csvData{}
        ↓  buildSeriesData() / buildBalanceData()
 Chart.js + HTML таблици
 ```
 
-### Създаване и актуализиране на JSON файлове
+### Стъпки при добавяне на нови данни
 
-JSON файловете се създават и редактират **директно** — без Python скрипт или друго средство за генериране. Данните се въвеждат ръчно от PDF отчетите.
+1. Кодирайте данните в `financial_data/shelly/extract_qX_YYYY.py`
+2. `python3 financial_data/generate_csv.py shelly`
+3. Файлът `docs/companies/shelly/data.csv` се обновява автоматично
 
 ---
 
-## 4. JSON схема
+## 4. CSV схема
 
-### Топ-ниво ключове (след deepMerge)
+### Формат на файла
 
-```json
-{
-  "meta": { ... },
-  "shareholders": { ... },
-  "subsidiaries": { ... },
-  "income_statement": { "ytd": {...}, "quarterly_labels": {...}, "items": {...} },
-  "cash_flows": { "ytd": {...}, "items": {...} },
-  "per_share": { "shares": {...}, "eps_ytd": {...}, "eps_quarterly": {...}, "book_value_per_share": {...} },
-  "ratios": { ... },
-  "balance_sheet": { ... },              ← 2025 (restated comparative 2024)
-  "balance_sheet_2024_original": { ... },
-  "balance_sheet_2023": { ... },
-  "balance_sheet_2022": { ... },
-  "balance_sheet_2021": { ... }          ← само Dec 2020 и Dec 2021 (индекси 0 и 4)
-}
+`data.csv` е UTF-8 с BOM, с 60+ реда и колони за всяко тримесечие:
+
+```
+раздел,счетоводен_ред,Q1 2021 (3М),Q2 2021 (6М),...,Q4 2025 (12М)
+Приходи и разходи,Приходи от продажби,14993,,,…
+Приходи и разходи,Себестойност на продажбите,,,…
+...
 ```
 
-### Масиви с данни — конвенция за индекси
+**Колони 1–2:** `раздел` и `счетоводен_ред` (идентификатори на реда)
 
-Всички масиви с периодни данни са с **4 елемента** [Q1, Q2, Q3, Q4]:
+**Колони 3+:** период в формат `Q{q} {YYYY} ({месеца}М)` — напр. `Q1 2024 (3М)`, `Q4 2025 (12М)`
 
-```js
-item.ytd_2025       = [Q1_YTD, H1_YTD, 9M_YTD, FY_YTD]       // кумулативни от 1 януари
-item.quarterly_2025 = [Q1_standalone, Q2_standalone, Q3_standalone, Q4_standalone]
-```
+Стойностите са **YTD кумулативни** (от началото на годината). Дашбордът изчислява standalone тримесечни стойности чрез разлика: Q2_standalone = Q2_YTD − Q1_YTD.
 
-За **2021** са налични само годишни (FY) данни — индекс 3:
-```js
-item.ytd_2021 = [null, null, null, FY_value]
-// quarterly_2021 не се включва (липсват тримесечни данни)
-```
+**Изключение:** Балансови редове (раздели „Активи", „Пасиви", „Собствен капитал") са **моментни стойности** (snapshot), не YTD.
 
-Изключение — **Balance Sheet** `values` масиви имат **5 елемента**:
-```js
-bs.assets.total.values = [PrevYearEnd, Q1_end, Q2_end, Q3_end, Q4_end]
-//                          index 0       1       2       3       4
-```
-В `buildBalanceData()`: annual режим → индекс `4`, quarterly режим → индекси `1..4`.
+### Единица и валута
 
-За `balance_sheet_2021`: индекс `0` = 31 дек 2020, индекс `4` = 31 дек 2021, индекси `1..3` = `null`.
+- Всички стойности: **хиляди BGN** (за Шелли до 2025)
+- Разходите са **отрицателни числа**
+- EPS: в лева на акция (не в хиляди)
+- Конверсията BGN→EUR се управлява от `meta.json`
 
-### Структура на Income Statement item
+### Ключови редове (счетоводен_ред)
 
-```json
-"revenue": {
-  "label_bg": "Приходи от продажби",
-  "label_en": "Revenue",
-  "note": "4.01",
-  "ytd_2025": [51759, 105550, 170036, 292869],
-  "ytd_2024": [40164, 81656, 127038, 208704],
-  "ytd_2024_original": [40164, 81656, 127038, 208704],
-  "ytd_2023": [27608, 54785, 86324, 146542],
-  "ytd_2022": [17150, 35753, 57829, 93234],
-  "ytd_2021": [null, null, null, 59503],
-  "quarterly_2025": [51759, 53791, 64486, 122833],
-  "quarterly_2024": [40164, 41492, 45382, 81666],
-  "quarterly_2023": [27608, 27177, 31539, 60218],
-  "quarterly_2022": [17150, 18603, 22076, 35405]
-}
-```
-
-### Структура на Balance Sheet
-
-```json
-"balance_sheet": {
-  "dates": ["2024-12-31", "2025-03-31", "2025-06-30", "2025-09-30", "2025-12-31"],
-  "assets": {
-    "current": {
-      "inventories":        { "values": [v0, v1, v2, v3, v4] },
-      "trade_receivables":  { "values": [...] },
-      "other_receivables":  { "values": [...] },
-      "cash":               { "values": [...] },
-      "total":              { "values": [...] }
-    },
-    "non_current": {
-      "ppe":          { "values": [...] },
-      "intangibles":  { "values": [...] },
-      "right_of_use": { "values": [...] },
-      "goodwill":     { "values": [...] },
-      "associates":   { "values": [...] },
-      "deferred_tax": { "values": [...] },
-      "total":        { "values": [...] }
-    },
-    "total": { "values": [...] }
-  },
-  "liabilities": {
-    "current": {
-      "bank_loans_st":  { "values": [...] },
-      "lease_st":       { "values": [...] },
-      "trade_payables": { "values": [...] },
-      "employee_st":    { "values": [...] },
-      "other":          { "values": [...] },
-      "total":          { "values": [...] }
-    },
-    "non_current": {
-      "bank_loans_lt": { "values": [...] },
-      "lease_lt":      { "values": [...] },
-      "total":         { "values": [...] }
-    },
-    "total": { "values": [...] }
-  },
-  "equity": {
-    "share_capital":    { "values": [...] },
-    "retained_earnings":{ "values": [...] },
-    "premium_reserve":  { "values": [...] },
-    "legal_reserves":   { "values": [...] },
-    "fx_translation":   { "values": [...] },
-    "equity_to_parent": { "values": [...] },
-    "nci":              { "values": [...] },
-    "total":            { "values": [...] }
-  }
-}
-```
-
-### `extractBSPoint(bs, i)` — достъпвани ключове
-
-Функцията търси `lc.bank_loans || lc.bank_loans_st` за краткосрочни банкови заеми. Ако нито един не съществува, приема 0. Аналогично за `lnc.bank_loans_lt`.
-
-### Брой акции
-
-```js
-D.per_share.shares = {
-  "2021":       18000000,
-  "2022":       18000000,
-  "2023":       18000000,
-  "2024":       18105559,
-  "q1_q2_2025": 18105559,
-  "q3_q4_2025": 18157559
-}
-```
-
-Функции в app.js:
-- `getShareCount(year, quarter)` — за quarterly/LTM режим (quarter = 1..4)
-- `getShareCountAnnual(year)` — за annual режим
-
-### Дивиденти
-
-```js
-D.cash_flows.items.financing.dividends_paid = {
-  ytd_2025: [0, 0, -4603, -4603],
-  ytd_2024: [0, -4379, -4590, -4590],
-  ytd_2023: [0, 0, -4500, -4500],
-  ytd_2022: [0, 0, -1719, -1719],
-  ytd_2021: [null, null, null, -3436]
-}
-```
-Стойностите са **отрицателни** (изходящи плащания). Използвай `Math.abs()`.
-
-### BVPS (Book Value Per Share)
-
-```js
-D.per_share.book_value_per_share = {
-  dates:  ["2024-12-31", "2025-03-31", ...],
-  values: [8.24, 8.87, 9.13, 10.01, 11.47],
-  dates_2024_original:  ["2023-12-31", ...],
-  values_2024_original: [6.09, 6.51, 6.77, 7.28, 8.26]
-}
-```
-За 2021–2023, BVPS се изчислява в app.js от `equity.equity_to_parent / shares`.
+| Ред в CSV | Описание |
+|-----------|----------|
+| `Приходи от продажби` | Revenue |
+| `Себестойност на продажбите` | COGS |
+| `Брутна печалба` | Gross profit |
+| `Разходи за продажби` | Selling expenses |
+| `Административни разходи` | Administrative expenses |
+| `Печалба от оперативна дейност (EBIT)` | EBIT |
+| `Финансови приходи` | Financial income |
+| `Финансови разходи` | Financial expenses |
+| `Печалба преди данъци (EBT)` | EBT |
+| `Нетна печалба` | Net profit |
+| `Нетен доход на акция (EPS, лв.)` | EPS |
+| `Пари и парични еквиваленти` | Cash |
+| `Търговски вземания` | Trade receivables |
+| `Материални запаси` | Inventories |
+| `Общо текущи активи` | Current assets |
+| `Общо нетекущи активи` | Non-current assets |
+| `ОБЩО АКТИВИ` | Total assets |
+| `Търговски задължения` | Trade payables |
+| `Банкови заеми` | Bank loans (current) |
+| `Задължения по лизинг (краткосрочни)` | Lease liabilities (ST) |
+| `Задължения по лизинг (дългосрочни)` | Lease liabilities (LT) |
+| `Общо текущи пасиви` | Current liabilities |
+| `Общо нетекущи пасиви` | Non-current liabilities |
+| `ОБЩО ПАСИВИ` | Total liabilities |
+| `ОБЩО СОБСТВЕН КАПИТАЛ` | Total equity |
+| `Нетни парични потоци от оперативна дейност` | Operating CF |
+| `Капиталови разходи (CAPEX)` | CAPEX |
+| `Нетни парични потоци от инвестиционна дейност` | Investing CF |
+| `Изплатени дивиденти` | Dividends paid |
+| `Нетни парични потоци от финансова дейност` | Financing CF |
+| `Пари в началото на периода` | Cash at start |
+| `Пари в края на периода` | Cash at end |
 
 ---
 
 ## 5. Архитектура на дашборда
 
-### Глобално състояние
+### Глобално състояние (app.js)
 
 ```js
-let D = null;              // обединен обект с всички данни (след deepMerge)
-let currentMode = 'quarterly';  // 'quarterly' | 'annual' | 'ltm'
-let activeYears = new Set(['2021','2022','2023','2024','2025']);
-const YEARS = ['2021','2022','2023','2024','2025'];
-const charts = {};         // { canvasId: Chart instance }
+let csvData   = {};         // { "Приходи от продажби": { "Q1 2021 (3М)": "14993", ... }, ... }
+let periods   = [];         // [{ q, year, months, key, colIdx }, ...]
+let allYears  = [];         // ["2021", "2022", ..., "2025"]
+let activeYears = new Set();// текущо активни години (от checkboxes)
+let currentMode = 'quarterly'; // 'quarterly' | 'annual' | 'ltm'
+let meta      = {};         // съдържание на meta.json
+const charts  = {};         // { canvasId: Chart instance }
+
+// Конфигурируеми чрез meta.json:
+let BGN_PER_EUR          = 1.95583;
+let EUR_TRANSITION_YEAR  = 2026;
+let DISPLAY_AMOUNT_UNIT  = 'хил. EUR';
+let DISPLAY_PER_SHARE_UNIT = 'EUR';
 ```
 
 ### Инициализация (init())
 
-1. Зарежда JSON файловете паралелно с `Promise.all()`:
-   - `shelly_group_{year}_{Q}.json` за years `['2022','2023','2024','2025']` × quarters `['Q1','Q2','Q3','Q4']`
-   - `shelly_group_2021_Q4.json` — зарежда се отделно (само Q4 съществува)
-2. Обединява ги с `deepMerge(target, source)` — рекурсивен merge, масивите се заместват (не конкатенират)
-3. Скрива spinner, показва `#dashboard`
-4. Извиква `refresh()`
+1. Чете `?company=` от URL (default: `'shelly'`)
+2. Зарежда `companies/{id}/meta.json` → `applyMeta()` → попълва заглавие, тикери, footer, currency константи
+3. Зарежда `companies/{id}/data.csv` → `parseCSV()` → `csvData`
+4. Открива периодите и годините от заглавния ред на CSV
+5. Генерира динамично checkboxes за години (последните 4 са активни по подразбиране)
+6. Извиква `refresh()`
 
-### Основни функции за данни
+### meta.json схема
+
+```json
+{
+  "id":          "shelly",
+  "name":        "Шелли Груп АД",
+  "subtitle":    "Финансов дашборд за инвеститори",
+  "logo_letter": "S",
+  "tickers": [
+    { "label": "BSE: SLYG", "url": "https://..." }
+  ],
+  "info": {
+    "Борса":  "BSE Sofia / XETRA",
+    "Тикър":  "SLYG",
+    "ISIN":   "BG1100003166",
+    "Сектор": "IoT / Smart Home",
+    "ЕИК":    "175440738"
+  },
+  "currency": {
+    "source":       "BGN",
+    "display":      "EUR",
+    "display_unit": "хил. EUR",
+    "rate_bgn_eur": 1.95583,
+    "eur_from_year": 2026
+  },
+  "footer":    "Бележка под линия за страницата.",
+  "data_file": "data.csv"
+}
+```
+
+### Основни функции
 
 | Функция | Описание |
 |---------|----------|
-| `getQuarterly(item, year)` | Връща `item.quarterly_YYYY` (за 2024 → `quarterly_2024`) |
-| `getYTD(item, year)` | Връща `item.ytd_YYYY` (за 2024 → `ytd_2024`) |
-| `buildSeriesData()` | Строи масив от обекти за текущия mode (quarterly/annual/LTM) |
+| `getCompanyId()` | Чете `?company=` от URL; default `'shelly'` |
+| `applyMeta(m)` | Попълва DOM и override-ва currency константите |
+| `parseCSV(text)` | Парсва CSV текст; връща 2D масив |
+| `csv(label, periodKey)` | Чете стойност от `csvData`; конвертира BGN→EUR ако е нужно |
+| `buildSeriesData()` | Строи масив за текущия mode (quarterly/annual/LTM) |
 | `buildBalanceData()` | Строи масив от BS snapshot обекти |
-| `extractBSPoint(bs, i)` | Helper — извлича всички BS полета от `bs` на индекс `i` |
-| `getShareCount(year, q)` | Правилният брой акции за quarterly/LTM |
-| `getShareCountAnnual(year)` | Правилният брой акции за annual |
+| `refresh()` | Главна функция — извиква всички render* при смяна на mode/years |
+| `mkChart(id, config)` | Destroy + create Chart.js инстанция |
+
+### csv() — конверсия BGN→EUR
+
+```js
+function csv(label, periodKey) {
+  const raw = csvData[label]?.[periodKey];
+  const val = parseFloat(raw);
+  if (isNaN(val)) return null;
+  const year = parseInt(periodKey.match(/(\d{4})/)?.[1]);
+  return (year && year < EUR_TRANSITION_YEAR) ? val / BGN_PER_EUR : val;
+}
+```
 
 ### buildSeriesData() — изходен обект
 
-Всеки елемент:
 ```js
 {
-  label,          // напр. "Q1'25" / "2025" / "LTM Q4'25"
+  label,           // напр. "Q1'25" / "2025" / "LTM Q4'25"
   revenue, net_profit, gross_profit, ebit,
-  cogs, sellExp, adminExp, otherExp,
-  finInc, finExp, tax,
-  cf_op, cf_fcf, cf_net,
+  cogs, sell_exp, admin_exp, other_exp,
+  fin_inc, fin_exp,
+  cf_op, cf_fcf, cf_net, capex,
+  dividends,
   eps
 }
 ```
 
 ### buildBalanceData() — изходен обект
 
-Всеки елемент:
 ```js
 {
   label,
   assets, liabilities, equity,
-  current_assets, current_liabilities,
-  bank_loans, bank_loans_st,
-  lease_st, lease_lt,
+  current_assets, current_liab,
+  cash, recv, inventories,
   trade_payables,
-  cash, recv,    // recv = trade_receivables
-  inventories,
-  re             // retained_earnings
+  bank_loans, lease_st, lease_lt,
+  nc_liab, nc_assets
 }
 ```
 
-### LTM режим
+### Quarterly vs Annual vs LTM
 
-- Строи `allQuarters` масив от наличните тримесечия
-- Слайдинг прозорец от 4 квартала (i-3 .. i)
-- Сумира income/CF стойности; Balance sheet → snapshot стойности (не суми)
-- LTM EPS = сума от 4 тримесечни EPS
+- **Quarterly:** standalone Q стойности = YTD(Q) − YTD(Q-1); за Q1 = YTD директно
+- **Annual:** Q4 YTD стойности = FY стойности
+- **LTM:** сума на последните 4 standalone тримесечия (само IS/CF); BS = последен snapshot
+- **Баланс:** винаги моментни (point-in-time) стойности — не се сумират
 
-### refresh()
+### Брой акции
 
-Главната функция, извиквана при промяна на mode или year filter. Извиква всички `render*` функции.
+Изчислява се динамично от CSV: `shares = (annual_net_profit / annual_EPS) * 1000`
 
-### mkChart(id, config)
-
-```js
-function mkChart(id, config) {
-  const ctx = document.getElementById(id).getContext('2d');
-  if (charts[id]) charts[id].destroy();
-  charts[id] = new Chart(ctx, config);
-  return charts[id];
-}
-```
-
-### BASE_CHART_OPTIONS
-
-Задължително се **deep clone** преди употреба:
-```js
-options: {
-  ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
-  // custom overrides
-}
-```
+Без хардкодирани стойности — работи за всяка компания.
 
 ---
 
 ## 6. Графики и таблици
 
-| Canvas ID | Функция | Описание |
-|-----------|---------|----------|
+| Canvas ID | Render функция | Описание |
+|-----------|---------------|----------|
 | `chart-revenue` | `renderRevenueChart` | Bars: Приходи + Нетна печалба |
 | `chart-margins` | `renderMarginsChart` | Lines: Брутен/EBIT/Нетен марж % |
 | `chart-yoy-growth` | `renderYoYGrowthChart` | Lines: Растеж г/г % |
 | `chart-expense-breakdown` | `renderExpenseBreakdownChart` | Stacked bars: разходна структура |
-| `chart-cashflow` | `renderCashflowChart` | Bars: OCF / FCF / Нетна промяна |
+| `chart-cashflow` | `renderCashflowChart` | Bars: OCF / Invest.CF / Financ.CF |
 | `chart-fcf` | `renderFCFChart` | Bars: FCF (зелено/червено) |
-| `chart-interest-coverage` | `renderInterestCoverageChart` | Bars: EBIT / Fin.Exp (x) |
+| `chart-interest-coverage` | `renderInterestCoverageChart` | Bar: EBIT / Fin.Exp (x) |
 | `chart-earnings-quality` | `renderEarningsQualityChart` | Line: OCF / Net Profit |
 | `chart-balance` | `renderBalanceChart` | Stacked bars: Капитал + Пасиви |
 | `chart-asset-growth` | `renderAssetGrowthChart` | Lines: Активи / Капитал / Пари |
@@ -359,149 +301,168 @@ options: {
 | `chart-liquidity` | `renderLiquidityChart` | Lines: Current / Quick ratio |
 | `chart-dupont` | `renderDuPontChart` | Lines: ROE decomposition |
 | `chart-receivables` | `renderReceivablesChart` | Line: Дни вземания |
-| `chart-seasonality` | `renderSeasonalityChart` | Grouped bars: Q1-Q4 по години |
+| `chart-seasonality` | `renderSeasonalityChart` | Grouped bars: Q1–Q4 по години |
 | `chart-working-capital` | `renderWorkingCapitalChart` | Lines: Inventory/Recv/Pay days + CCC |
-| `chart-dividends` | `renderDividendsChart` | Bars: Изплатени дивиденти (annual) |
-| `chart-dps` | `renderDividendPerShareChart` | Bars: Дивидент на акция (annual) |
-| `chart-payout` | `renderPayoutRatioChart` | Line: Payout ratio % (annual) |
-| `chart-eps-fcf` | `renderEPSvsFCFChart` | Bars: EPS vs FCF/share |
+| `chart-dividends` | `renderDividendsChart` | Bars: Изплатени дивиденти |
+| `chart-dps` | `renderDividendPerShareChart` | Bars: Дивидент на акция |
+| `chart-payout` | `renderPayoutRatioChart` | Line: Payout ratio % |
+| `chart-eps-fcf` | `renderEPSvsFCFChart` | Bars: EPS vs FCF/акция |
 | `chart-bvps` | `renderBVPSChart` | Line: Book Value Per Share |
 
 **Таблици:**
-| ID | Функция | Съдържание |
-|----|---------|------------|
+
+| ID | Render функция | Съдържание |
+|----|---------------|------------|
 | `income-thead/tbody` | `renderIncomeTable` | Приходи, GP, EBIT, NP, маржове |
 | `balance-thead/tbody` | `renderBalanceTable` | Активи, Пари, Вземания, Капитал, Пасиви, D/E |
 | `cf-thead/tbody` | `renderCashFlowTable` | OCF, Invest.CF, Financ.CF, Net Change, FCF |
 
 ---
 
-## 7. Важни особености и аномалии
+## 7. Важни особености
 
-### 2021 — само годишни данни
+### Q1 2021 — ограничени данни (НСС формат)
 
-Файлът `shelly_group_2021_Q4.json` съдържа само FY 2021 данни (от годишния отчет). В quarterly режим за 2021 се вижда само Q4 snapshot на баланса. За да се добавят тримесечни данни (Q1–Q3 2021), трябва да се създадат допълнителни JSON файлове от съответните тримесечни отчети.
+`extract_q1_2021.py` е от стар НСС формат (не МСФО). Функционален IS (COGS, GP, разходи) не е наличен — само агрегирани суми. Колоните за тези редове са празни за Q1 2021.
 
-### 2024 — рекласификация на данните
+### YTD стойности — standalone изчисление
 
-Q1 2025 отчетът представя сравнителни данни за 2024, рекласифицирани за сравнимост.
+```js
+// Q2 standalone = Q2 YTD − Q1 YTD
+const q2 = csv(row, "Q2 2024 (6М)") - csv(row, "Q1 2024 (3М)");
+// Q1 standalone = Q1 YTD (директно)
+const q1 = csv(row, "Q1 2024 (3М)");
+```
 
-**Две версии на 2024:**
-- `ytd_2024` / `quarterly_2024` / `balance_sheet` (index 0) — **рестатирани** (от Q1 2025 отчет)
-- `ytd_2024_original` / `quarterly_2024_original` / `balance_sheet_2024_original` — **оригинални**
+### Валутна конверсия
 
-В app.js `getQuarterly()` и `getYTD()` използват рестатираните данни за 2024 по подразбиране.
+```
+year < EUR_TRANSITION_YEAR (2026) → стойност / BGN_PER_EUR (1.95583)
+year ≥ 2026                       → стойност директно (вече EUR)
+```
 
-- Dec 2024 restated total assets = **180,606**
-- Dec 2024 original total assets = **183,068**
+Това важи за всички суми: графики, KPI, таблици, CSV export.
 
-### Валутна нормализация в UI
+### Нетен дълг
 
-- Дашбордът визуализира **всички абсолютни стойности в EUR**.
-- За периоди **2021–2025** конверсията се прави в `app.js` при изграждане на series/balance данните: `BGN / 1.95583`.
-- За периоди **2026+** не се прави конверсия; стойностите се приемат като вече въведени в EUR.
-- Това правило важи и за `EPS`, `BVPS`, `FCF/share`, `DPS`, всички графики, KPI, таблици и CSV export.
-- Не разчитай на `D.meta.currency` за историческа логика, защото `deepMerge()` оставя само последната заредена meta стойност.
+```js
+net_debt = bank_loans + lease_st + lease_lt - cash
+// bank_loans_lt = nc_liab - lease_lt - nc_employee (нямаме отделен ред)
+```
 
-### 2023 Q3 — аномалия в финансовите разходи
+### Брой акции — динамично
 
-`financial_expenses` за Q3 2023 standalone = **+249** (положителна стойност) — резултат от рекласификация между Q2 и Q3 отчети. Стойността е правилна, не се коригира.
+```js
+// От annual EPS и net_profit:
+shares = (annual_net_profit / annual_EPS) * 1000
+// (EPS е в лева, net_profit е в хиляди → * 1000)
+```
 
-### EPS — тримесечни стойности
+### Дивиденти
 
-Изчислени като разлика на кумулативни YTD EPS: Q2 = H1 - Q1, Q3 = 9M - H1, Q4 = FY - 9M.
-
-### Баланс — верификация
-
-За всички snapshot-и: `Пасиви + Собствен капитал = Общо активи`. Задължително верифицирай при добавяне на нови данни.
-
-### Дивидентни плащания — сезонност
-
-Дружеството исторически изплаща дивиденти в Q3. В 2024 има частично плащане в Q2 (4,379 хил.) и допълнение в Q3 (211 хил.).
+В CSV дивидентите са **отрицателни** (изходящи плащания). При визуализация се използва `Math.abs()`.
 
 ---
 
 ## 8. Как се добавя ново тримесечие
 
-Пример: добавяне на **Q1 2026**.
+Пример: добавяне на **Q1 2026** за Шелли.
 
-### Стъпка 1 — Създай JSON файл директно
+### Стъпка 1 — Кодирайте данните
 
-Създай `docs/data/shelly_group_2026_Q1.json` по образеца на съществуващите файлове.
+Създайте `financial_data/shelly/extract_q1_2026.py` по образеца на `extract_q1_2025.py`.
 
-Файлът трябва да съдържа само новите данни за 2026 — `deepMerge` ще ги обедини с останалите. От 2026 нататък числата в JSON вече са **в EUR** и не се нуждаят от допълнителна конверсия в сайта. Минимална структура:
+От 2026 нататък числата се въвеждат директно в **EUR** (не BGN).
 
-```json
-{
-  "meta": { "generated_at": "YYYY-MM-DD", ... },
-  "income_statement": {
-    "ytd": {
-      "2026": {
-        "labels": ["Q1 2026 (3M)", "H1 2026 (6M)", "9M 2026", "FY 2026 (12M)"],
-        "dates":  ["2026-03-31",   "2026-06-30",   "2026-09-30", "2026-12-31"],
-        "months": [3, 6, 9, 12]
-      }
-    },
-    "quarterly_labels": { "2026": ["Q1 2026", "Q2 2026", "Q3 2026", "Q4 2026"] },
-    "items": {
-      "revenue":       { "ytd_2026": [XXXX, null, null, null], "quarterly_2026": [XXXX, null, null, null] },
-      "cogs":          { "ytd_2026": [-XXXX, null, null, null], "quarterly_2026": [-XXXX, null, null, null] },
-      ...
-    }
-  },
-  "cash_flows": { ... },
-  "balance_sheet_2026": {
-    "dates":  ["2025-12-31", "2026-03-31", null, null, null],
-    "labels": ["31 дек 2025", "31 мар 2026", null, null, null],
-    "assets": { ... },
-    "liabilities": { ... },
-    "equity": { ... }
-  }
+```python
+meta = {
+    "дружество":      "Шелли Груп АД",
+    "период":         "Q1 2026 (3М)",
+    "края_на_период": "2026-03-31",
+    "валута":         "хил. EUR",    # ← EUR, не BGN
 }
+income_statement = { "приходи_от_продажби": XXXX, ... }
+balance_sheet    = { "общо_активи": XXXX, ... }
+cash_flows       = { "нетни_потоци_оперативна": XXXX, ... }
+
+def get_data():
+    return {"meta": meta, "income_statement": income_statement,
+            "balance_sheet": balance_sheet, "cash_flows": cash_flows}
 ```
 
-### Стъпка 2 — app.js
+### Стъпка 2 — Генерирайте CSV
 
-В `YEARS`:
-```js
-const YEARS = ['2021','2022','2023','2024','2025','2026'];
+```bash
+python3 financial_data/generate_csv.py shelly
 ```
 
-В `activeYears`:
-```js
-let activeYears = new Set(['2021','2022','2023','2024','2025','2026']);
+Скриптът автоматично засича 2026 и копира обновения `data.csv` в `docs/companies/shelly/data.csv`.
+
+### Стъпка 3 — Верифицирайте
+
+```bash
+python3 financial_data/validate.py shelly
 ```
 
-В `init()` — добави зареждането на 2026 файловете (аналогично на 2022–2025 или 2021).
+Проверете: Пасиви + Капитал = Активи за новия период.
 
-В `buildBalanceData()` — добави случаите за 2026 в quarterly и LTM масивите:
-```js
-const bs26 = D.balance_sheet_2026;
-// annual:
-...(bs26 ? [{ label: '2026', ...extractBSPoint(bs26, 4) }] : []),
-// quarterly:
-...(activeYears.has('2026') && bs26 ? [
-  { label: "Q1'26", bs: bs26, i: 1 }, ...
-] : []),
+### Стъпка 4 — Тествайте в браузъра
+
+```bash
+cd docs && python3 -m http.server 8090
+# http://localhost:8090/?company=shelly
 ```
-
-### Стъпка 3 — index.html
-
-Добави checkbox:
-```html
-<label><input type="checkbox" value="2026" checked onchange="updateYearFilter()"> 2026</label>
-```
-
-### Стъпка 4 — Верифицирай
-
-- Баланс: Пасиви + Капитал = Активи за всички нови snapshot-и
-- Стартирай сървъра и провери в двата режима (quarterly и annual)
 
 ---
 
-## 9. Как се добавя нова графика
+## 9. Как се добавя нова компания
 
-1. **HTML** — добави canvas в подходящата секция:
+### Стъпка 1 — Кодирайте данните
+
+```bash
+mkdir financial_data/<company_id>
+# Създайте extract_q1_YYYY.py … extract_q4_YYYY.py по образеца на shelly/
+```
+
+### Стъпка 2 — Генерирайте CSV
+
+```bash
+python3 financial_data/generate_csv.py <company_id>
+```
+
+### Стъпка 3 — Метаданни
+
+Създайте `docs/companies/<company_id>/meta.json`:
+
+```json
+{
+  "id":          "<company_id>",
+  "name":        "Компания АД",
+  "subtitle":    "Финансов дашборд",
+  "logo_letter": "К",
+  "tickers": [{ "label": "BSE: TICK", "url": "https://..." }],
+  "info": { "Борса": "...", "Тикър": "...", "ISIN": "...", "Сектор": "..." },
+  "currency": {
+    "source": "BGN", "display": "EUR", "display_unit": "хил. EUR",
+    "rate_bgn_eur": 1.95583, "eur_from_year": 2026
+  },
+  "footer": "Бележка.",
+  "data_file": "data.csv"
+}
+```
+
+### Стъпка 4 — Отворете в браузъра
+
+```
+http://localhost:8090/?company=<company_id>
+```
+
+---
+
+## 10. Как се добавя нова графика
+
+### HTML (index.html)
+
 ```html
 <div class="chart-card">
   <div class="chart-title"><span class="dot" style="background:#COLOR"></span>Заглавие</div>
@@ -510,46 +471,55 @@ const bs26 = D.balance_sheet_2026;
 </div>
 ```
 
-2. **app.js** — добави render функция:
+### app.js
+
 ```js
 function renderMyNewChart(series) {
-  const labels = series.map(s => s.label);
   mkChart('chart-my-new', {
-    type: 'line',
+    type: 'bar',
     data: {
-      labels,
+      labels: series.map(s => s.label),
       datasets: [{
         label: 'Показател',
-        data: series.map(s => /* изчисление */),
-        borderColor: CHART_COLORS.blue,
-        backgroundColor: CHART_COLORS.blueA,
-        borderWidth: 2,
-        tension: 0.3
+        data: series.map(s => s.revenue),   // или друг ключ
+        backgroundColor: COLORS.blue,
       }]
     },
-    options: {
-      ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)),
-      // overrides
-    }
+    options: { ...JSON.parse(JSON.stringify(BASE_CHART_OPTIONS)) }
   });
 }
 ```
 
-3. **refresh()** — добави извикването в правилния ред.
+### refresh()
+
+Добавете извикването в правилния ред:
+```js
+renderMyNewChart(series);
+```
 
 ---
 
-## 10. Работна среда и стартиране
+## 11. Работна среда и стартиране
 
 ### Стартиране на локален сървър
 
 ```bash
 cd /Users/mac/projects/shelly/docs
 python3 -m http.server 8090
-# Отвори: http://localhost:8090
+# Шелли:         http://localhost:8090/
+# Друга компания: http://localhost:8090/?company=<id>
 ```
 
-Или чрез `.claude/launch.json` (конфигуриран за порт 8090).
+### Пълен workflow за нови данни
+
+```bash
+# 1. Кодирайте данните в financial_data/<company>/extract_qX_YYYY.py
+# 2. Генерирайте и копирайте CSV:
+python3 financial_data/generate_csv.py <company>
+# 3. Валидирайте:
+python3 financial_data/validate.py <company>
+# 4. Тествайте в браузъра
+```
 
 ### Export на CSV
 
@@ -558,11 +528,12 @@ python3 -m http.server 8090
 ### Зависимости
 
 - **Chart.js 4.4.4** — зарежда се от CDN
+- **Python 3** — за `generate_csv.py` и `validate.py`
 - Без npm, без build процес
 
 ### CORS
 
-JSON файловете трябва да се сервират от HTTP сървър. Директно отваряне на `index.html` от файловата система ще покаже CORS грешка.
+`data.csv` трябва да се сервира от HTTP сървър. Директното отваряне на `index.html` от файловата система ще покаже CORS грешка.
 
 ### Деплой
 

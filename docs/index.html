@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Шелли Груп АД – Финансов дашборд</title>
+<title>Финансов дашборд</title>
 <link rel="stylesheet" href="styles.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 </head>
@@ -11,15 +11,14 @@
 
 <header>
   <div class="header-left">
-    <div class="header-logo">S</div>
+    <div class="header-logo" id="header-logo">–</div>
     <div class="header-title">
-      <h1>Шелли Груп АД</h1>
-      <div class="subtitle">Финансов дашборд за инвеститори</div>
+      <h1 id="company-name">Зареждане…</h1>
+      <div class="subtitle" id="company-subtitle"></div>
     </div>
   </div>
-  <div class="header-tickers">
-    <a class="ticker-badge" href="https://www.bse-sofia.bg/bg/issuer-profile/SLYG/" target="_blank" rel="noopener">BSE: SLYG</a>
-    <a class="ticker-badge" href="https://live.deutsche-boerse.com/equity/shelly-group-se?mic=XETR" target="_blank" rel="noopener">XETRA: SLYG</a>
+  <div class="header-tickers" id="company-tickers">
+    <!-- Populated from meta.json -->
   </div>
 </header>
 
@@ -31,12 +30,7 @@
     <button class="mode-btn" data-mode="ltm" onclick="setMode('ltm')">Последни 4 тримесечия</button>
   </div>
   <div class="year-filters" id="year-filters">
-    <span class="controls-label">Години:</span>
-    <label><input type="checkbox" value="2021" onchange="updateYearFilter()"> 2021</label>
-    <label><input type="checkbox" value="2022" checked onchange="updateYearFilter()"> 2022</label>
-    <label><input type="checkbox" value="2023" checked onchange="updateYearFilter()"> 2023</label>
-    <label><input type="checkbox" value="2024" checked onchange="updateYearFilter()"> 2024</label>
-    <label><input type="checkbox" value="2025" checked onchange="updateYearFilter()"> 2025</label>
+    <!-- Populated dynamically from CSV -->
   </div>
   <button class="export-btn" onclick="exportCSV()">CSV</button>
 </div>
@@ -49,24 +43,25 @@
 
   <div id="error-banner">
     <h3>Грешка при зареждане на данните</h3>
-    <p>
-      Файлът <code>financial_data.json</code> не може да бъде зареден директно от браузъра поради CORS ограничения.<br><br>
+    <p id="error-message">
+      Данните не могат да бъдат заредени директно от браузъра поради CORS ограничения.<br><br>
       Моля, стартирайте локален HTTP сървър в директорията на проекта:<br><br>
-      <code>python3 -m http.server 8080</code><br><br>
-      След това отворете: <code><a href="http://localhost:8080" style="color: var(--red);">http://localhost:8080</a></code>
+      <code>python3 -m http.server 8080</code>
     </p>
   </div>
 
   <div id="dashboard">
+
+    <!-- ── KPI Cards ──────────────────────────────────────────────────── -->
     <div class="kpi-grid">
       <div class="kpi-card">
-        <div class="kpi-label">Приходи (EUR)</div>
+        <div class="kpi-label" id="kpi-revenue-label">Приходи</div>
         <div class="kpi-value" id="kpi-revenue">–</div>
         <div class="kpi-sub" id="kpi-revenue-yoy"></div>
         <div class="kpi-period" id="kpi-revenue-period"></div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-label">Нетна печалба (EUR)</div>
+        <div class="kpi-label" id="kpi-netprofit-label">Нетна печалба</div>
         <div class="kpi-value" id="kpi-netprofit">–</div>
         <div class="kpi-sub" id="kpi-netprofit-yoy"></div>
         <div class="kpi-period" id="kpi-netprofit-period"></div>
@@ -78,20 +73,22 @@
         <div class="kpi-period" id="kpi-ebitmargin-period"></div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-label">EPS (EUR на акция)</div>
+        <div class="kpi-label" id="kpi-eps-label">EPS (на акция)</div>
         <div class="kpi-value" id="kpi-eps">–</div>
         <div class="kpi-sub" id="kpi-eps-yoy"></div>
-        <div class="kpi-period" id="kpi-eps-period">FY 2025</div>
+        <div class="kpi-period" id="kpi-eps-period"></div>
       </div>
     </div>
 
+    <!-- ── Company / Meta Info Bar ───────────────────────────────────── -->
     <div class="stock-info-bar" id="stock-info"></div>
 
+    <!-- ── Приходи и печалба ──────────────────────────────────────────── -->
     <h2 class="section-title">Приходи и печалба</h2>
-    <p class="section-desc">Основни показатели за растеж и рентабилност. Данни: приходи, брутна печалба, EBIT, нетна печалба, маржове. Ползва се за: оценка на растежа г/г, сравнение на маржовете във времето.</p>
+    <p class="section-desc">Основни показатели за растеж и рентабилност. Данни: приходи, брутна печалба, EBIT, нетна печалба, маржове.</p>
     <div class="charts-grid">
       <div class="chart-card">
-        <div class="chart-title"><span class="dot"></span>Приходи и нетна печалба (EUR)</div>
+        <div class="chart-title"><span class="dot"></span>Приходи и нетна печалба</div>
         <div class="chart-wrapper"><canvas id="chart-revenue"></canvas></div>
       </div>
       <div class="chart-card">
@@ -100,7 +97,7 @@
       </div>
     </div>
 
-    <div class="charts-grid" style="margin-bottom:16px;">
+    <div class="charts-grid">
       <div class="chart-card">
         <div class="chart-title"><span class="dot" style="background:var(--green)"></span>Растеж г/г (%)</div>
         <div class="chart-desc">Годишен темп на растеж на приходи и нетна печалба спрямо същия период на предходната година.</div>
@@ -108,14 +105,15 @@
       </div>
     </div>
 
-    <div class="chart-card full-width" style="margin-bottom:16px;">
+    <div class="chart-card full-width">
       <div class="chart-title"><span class="dot" style="background:var(--teal)"></span>Разбивка на приходите</div>
-      <div class="chart-desc">Показва как приходите се превръщат в печалба - себестойност, разходи за продажби, админ. разходи, други разходи. Ползва се за: анализ на разходната структура и оперативна ефективност.</div>
-      <div class="chart-wrapper" style="height:280px;"><canvas id="chart-expense-breakdown"></canvas></div>
+      <div class="chart-desc">Себестойност, разходи за продажби, административни разходи, брутна печалба.</div>
+      <div class="chart-wrapper chart-wrapper--tall"><canvas id="chart-expense-breakdown"></canvas></div>
     </div>
 
+    <!-- ── Парични потоци ─────────────────────────────────────────────── -->
     <h2 class="section-title">Парични потоци</h2>
-    <p class="section-desc">Паричните потоци показват реалното движение на пари. Данни: оперативен CF, CAPEX, FCF. Ползва се за: оценка на ликвидността, способност за изплащане на дивиденти, инвестиции.</p>
+    <p class="section-desc">Паричните потоци показват реалното движение на пари. Данни: оперативен CF, CAPEX, FCF.</p>
     <div class="charts-grid">
       <div class="chart-card">
         <div class="chart-title"><span class="dot" style="background:var(--green)"></span>Парични потоци</div>
@@ -123,26 +121,27 @@
       </div>
       <div class="chart-card">
         <div class="chart-title"><span class="dot" style="background:var(--navy)"></span>Свободен паричен поток (FCF)</div>
-        <div class="chart-desc">FCF = Оперативен CF - CAPEX. Най-важния показател за акционерите. Ползва се за: оценка на "истинска" печалба, дивидентна устойчивост.</div>
+        <div class="chart-desc">FCF = Оперативен CF - CAPEX.</div>
         <div class="chart-wrapper"><canvas id="chart-fcf"></canvas></div>
       </div>
     </div>
 
-    <div class="charts-grid-4">
+    <div class="charts-grid">
       <div class="chart-card">
         <div class="chart-title"><span class="dot" style="background:#8B5CF6"></span>Покритие на лихви</div>
-        <div class="chart-desc">EBIT / Финансови разходи. Колко пъти печалбата покрива лихвите. Ползва се за: оценка на финансов риск, способност за обслужване на дълга.</div>
+        <div class="chart-desc">EBIT / Финансови разходи.</div>
         <div class="chart-wrapper"><canvas id="chart-interest-coverage"></canvas></div>
       </div>
       <div class="chart-card">
         <div class="chart-title"><span class="dot" style="background:#EC4899"></span>Качество на печалбата</div>
-        <div class="chart-desc">OCF / Нетна печалба. Дали печалбата е в реални пари. Ползва се за: разпознаване на "книжна" печалба, оценка на вземания и CAPEX.</div>
+        <div class="chart-desc">OCF / Нетна печалба.</div>
         <div class="chart-wrapper"><canvas id="chart-earnings-quality"></canvas></div>
       </div>
     </div>
 
+    <!-- ── Баланс и растеж ────────────────────────────────────────────── -->
     <h2 class="section-title">Баланс и растеж</h2>
-    <p class="section-desc">Структурата на активите, пасивите и собствения капитал. Данни: общи активи, собствен капитал, пари, вземания, пасиви. Ползва се за: оценка на финансова стабилност, платежоспособност.</p>
+    <p class="section-desc">Структурата на активите, пасивите и собствения капитал.</p>
     <div class="charts-grid">
       <div class="chart-card">
         <div class="chart-title"><span class="dot" style="background:var(--navy-light)"></span>Структура на баланса</div>
@@ -150,61 +149,63 @@
       </div>
       <div class="chart-card">
         <div class="chart-title"><span class="dot" style="background:#14B8A6"></span>Растеж на активите</div>
-        <div class="chart-desc">Показва натрупването на активи и капитал във времето. Ползва се за: проследяване на органичен растеж, експанзия.</div>
+        <div class="chart-desc">Натрупване на активи и капитал във времето.</div>
         <div class="chart-wrapper"><canvas id="chart-asset-growth"></canvas></div>
       </div>
     </div>
 
-    <div class="charts-grid" style="margin-bottom:16px;">
+    <div class="charts-grid">
       <div class="chart-card">
         <div class="chart-title"><span class="dot" style="background:var(--red)"></span>Нетен дълг и D/E</div>
-        <div class="chart-desc">Нетен дълг = банкови заеми + лизинги - пари. Положителна стойност означава нетен дълг, отрицателна - нетна парична позиция.</div>
+        <div class="chart-desc">Нетен дълг = банкови заеми + лизинги - пари.</div>
         <div class="chart-wrapper"><canvas id="chart-net-debt"></canvas></div>
       </div>
     </div>
 
-    <div class="charts-grid-4">
+    <div class="charts-grid">
       <div class="chart-card">
         <div class="chart-title"><span class="dot" style="background:#F59E0B"></span>Ликвидност</div>
-        <div class="chart-desc">Текущо и бързо съотношение. Ползва се за: оценка на краткосрочна платежоспособност.</div>
+        <div class="chart-desc">Текущо и бързо съотношение.</div>
         <div class="chart-wrapper"><canvas id="chart-liquidity"></canvas></div>
       </div>
       <div class="chart-card">
         <div class="chart-title"><span class="dot" style="background:#EF4444"></span>Възвращаемост (DuPont ROE)</div>
-        <div class="chart-desc">ROE разложено на компоненти: нетен марж × оборот на активи × ливъридж. Ползва се за: анализ откъде идва възвращаемостта.</div>
+        <div class="chart-desc">ROE разложено на компоненти.</div>
         <div class="chart-wrapper"><canvas id="chart-dupont"></canvas></div>
       </div>
     </div>
 
+    <!-- ── Ефективност ────────────────────────────────────────────────── -->
     <h2 class="section-title">Ефективност</h2>
-    <p class="section-desc">Показатели за оперативна ефективност и сезонни модели. Ползва се за: оптимизация на вземания, планиране на касови потоци.</p>
+    <p class="section-desc">Показатели за оперативна ефективност и сезонни модели.</p>
     <div class="charts-grid">
       <div class="chart-card">
         <div class="chart-title"><span class="dot" style="background:#6366F1"></span>Оборот на вземания (дни)</div>
-        <div class="chart-desc">За колко дни компанията събира вземанията си. Ползва се за: оценка на кредитната политика, сравнение с конкуренти.</div>
+        <div class="chart-desc">За колко дни компанията събира вземанията си.</div>
         <div class="chart-wrapper"><canvas id="chart-receivables"></canvas></div>
       </div>
       <div class="chart-card">
         <div class="chart-title"><span class="dot" style="background:#84CC16"></span>Сезонност на приходите</div>
-        <div class="chart-desc">Разпределение на приходите по тримесечия. Ползва се за: прогнозиране на парични потоци, разбиране на бизнес модела.</div>
+        <div class="chart-desc">Разпределение на приходите по тримесечия.</div>
         <div class="chart-wrapper"><canvas id="chart-seasonality"></canvas></div>
       </div>
     </div>
 
-    <div class="charts-grid" style="margin-bottom:16px;">
+    <div class="charts-grid">
       <div class="chart-card">
         <div class="chart-title"><span class="dot" style="background:#D97706"></span>Цикъл на оборотния капитал</div>
-        <div class="chart-desc">Дни запаси + дни вземания - дни задължения = CCC (Cash Conversion Cycle). По-кратък цикъл означава по-ефективно управление на капитала.</div>
+        <div class="chart-desc">Дни запаси + дни вземания - дни задължения = CCC.</div>
         <div class="chart-wrapper"><canvas id="chart-working-capital"></canvas></div>
       </div>
     </div>
 
+    <!-- ── Дивиденти ──────────────────────────────────────────────────── -->
     <h2 class="section-title">Дивиденти</h2>
-    <p class="section-desc">Дивидентна политика и история на изплащания. Ползва се за: оценка на дивидентна доходност, устойчивост на изплащанията.</p>
+    <p class="section-desc">Дивидентна политика и история на изплащания.</p>
     <div class="charts-grid">
       <div class="chart-card">
         <div class="chart-title"><span class="dot" style="background:var(--green)"></span>Изплатени дивиденти</div>
-        <div class="chart-desc">Общо изплатени дивиденти по години (хил. EUR).</div>
+        <div class="chart-desc">Общо изплатени дивиденти по години.</div>
         <div class="chart-wrapper"><canvas id="chart-dividends"></canvas></div>
       </div>
       <div class="chart-card">
@@ -213,29 +214,31 @@
         <div class="chart-wrapper"><canvas id="chart-dps"></canvas></div>
       </div>
     </div>
-    <div class="charts-grid" style="margin-bottom:16px;">
+    <div class="charts-grid">
       <div class="chart-card">
         <div class="chart-title"><span class="dot" style="background:var(--amber)"></span>Коефициент на изплащане (Payout Ratio)</div>
-        <div class="chart-desc">Дивиденти / Нетна печалба. Какъв процент от печалбата се връща на акционерите.</div>
+        <div class="chart-desc">Дивиденти / Нетна печалба.</div>
         <div class="chart-wrapper"><canvas id="chart-payout"></canvas></div>
       </div>
     </div>
 
+    <!-- ── Per Share ──────────────────────────────────────────────────── -->
     <h2 class="section-title">Per Share</h2>
-    <p class="section-desc">Показатели на една акция. Ползва се за: сравнение с други компании, оценка на инвестицията.</p>
+    <p class="section-desc">Показатели на една акция.</p>
     <div class="charts-grid">
       <div class="chart-card">
         <div class="chart-title"><span class="dot" style="background:var(--navy)"></span>EPS vs FCF на акция</div>
-        <div class="chart-desc">EPS (счетоводна печалба) спрямо FCF/акция (парична печалба). Ползва се за: оценка дали EPS е "истинска", сравнение на valuation.</div>
+        <div class="chart-desc">EPS (счетоводна печалба) спрямо FCF/акция (парична печалба).</div>
         <div class="chart-wrapper"><canvas id="chart-eps-fcf"></canvas></div>
       </div>
       <div class="chart-card">
         <div class="chart-title"><span class="dot" style="background:var(--teal)"></span>Счетоводна стойност на акция (BVPS)</div>
-        <div class="chart-desc">Собствен капитал / брой акции. Показва "книжната" стойност на компанията на акция.</div>
+        <div class="chart-desc">Собствен капитал / брой акции.</div>
         <div class="chart-wrapper"><canvas id="chart-bvps"></canvas></div>
       </div>
     </div>
 
+    <!-- ── Таблици ────────────────────────────────────────────────────── -->
     <h2 class="section-title">Таблици</h2>
     <div class="tables-grid">
       <div class="table-card">
@@ -257,7 +260,7 @@
         </div>
       </div>
     </div>
-    <div class="tables-grid" style="margin-bottom:16px;">
+    <div class="tables-grid">
       <div class="table-card full-width">
         <div class="table-header"><span class="dot" style="background:var(--green)"></span>Парични потоци</div>
         <div class="table-wrapper">
@@ -269,10 +272,10 @@
       </div>
     </div>
 
-    <div class="footnote">
-      Всички суми са визуализирани в хиляди EUR. Данните до 31.12.2025 са конвертирани от BGN по фиксиран курс 1.95583, а данните от 2026 нататък следва да се въвеждат директно в EUR. Източници: тримесечни консолидирани финансови отчети на Шелли Груп АД по МСФО.
-    </div>
-  </div>
+    <!-- ── Footer ────────────────────────────────────────────────────── -->
+    <div class="footnote" id="page-footer"></div>
+
+  </div><!-- #dashboard -->
 </main>
 
 <script src="app.js"></script>

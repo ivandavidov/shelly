@@ -1,90 +1,72 @@
 """
-Шелли Груп ЕД — Генератор на обединена CSV таблица
-=====================================================
-Генерира три файла в директория output/:
+Генератор на обединена CSV таблица — company-agnostic
+======================================================
+Генерира три файла в директория <company>/output/:
 
-  shelly_annual.csv
-      Годишни (FY) данни, колони: 2021 … 2025
+  <company>_annual.csv
+      Годишни (FY) данни, колони: <first_year> … <last_year>
 
-  shelly_quarterly_YYYY.csv
+  <company>_quarterly_YYYY.csv
       YTD тримесечни данни само за съответната година,
       колони: Q1 YYYY (3М) … Q4 YYYY (12М)
 
-  shelly_quarterly_all.csv
+  <company>_quarterly_all.csv
       YTD тримесечни данни за ВСИЧКИ налични години,
-      колони: Q1 2021 (3М) … Q4 2021 (12М) | Q1 2022 (3М) … Q4 2025 (12М)
+      колони: Q1 <first_year> (3М) … Q4 <last_year> (12М)
 
-Добавяне на нова година:
-  1. Създайте extract_q1_YYYY.py … extract_q4_YYYY.py
-  2. Стартирайте generate_csv.py — файловете се актуализират автоматично.
+След генериране файлът <company>_quarterly_all.csv се копира
+автоматично в docs/companies/<company>/data.csv.
 
-Единица: хил. лв. (BGN)
-Използване: python3 generate_csv.py
+Годините се засичат автоматично от наличните extract_qX_YYYY.py
+файлове в директорията на компанията — не е нужно ръчно да се
+поддържа списък.
+
+Използване:
+  python3 generate_csv.py --company shelly
+  python3 generate_csv.py shelly            (positional)
 """
 
+import argparse
 import csv
+import glob
 import importlib
 import os
+import re
+import shutil
 import sys
 
-sys.path.insert(0, os.path.dirname(__file__))
 
-# ── Конфигурация на годините ──────────────────────────────────────────────────
-ALL_YEARS = [2021, 2022, 2023, 2024, 2025]
+# ── CLI аргументи ─────────────────────────────────────────────────────────────
 
-# Суфикси за тримесечните периоди
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Генерира CSV файлове от extract_qX_YYYY.py скриптове за дадена компания."
+    )
+    parser.add_argument(
+        "company",
+        nargs="?",
+        help="ID на компанията (поддиректория в financial_data/, напр. 'shelly')",
+    )
+    parser.add_argument(
+        "--company", "-c",
+        dest="company_flag",
+        help="ID на компанията (алтернатива на позиционния аргумент)",
+    )
+    args = parser.parse_args()
+    company = args.company_flag or args.company
+    if not company:
+        parser.error(
+            "Моля, посочете ID на компанията: python3 generate_csv.py --company shelly"
+        )
+    return company
+
+
+# ── Конфигурация ──────────────────────────────────────────────────────────────
+
 QUARTER_SUFFIX = {1: "3М", 2: "6М", 3: "9М", 4: "12М"}
 
-
-def col(year, q):
-    """Генерира заглавие на колона: 'Q1 2025 (3М)'"""
-    return f"Q{q} {year} ({QUARTER_SUFFIX[q]})"
-
-
-# ── Зареждане на данни по динамичен начин ─────────────────────────────────────
-def load_quarter(year, q):
-    """
-    Опитва да зареди extract_qQ_YYYY.py и връща get_data().
-    При липсващ скрипт връща None.
-    """
-    module_name = f"extract_q{q}_{year}"
-    try:
-        mod = importlib.import_module(module_name)
-        return mod.get_data()
-    except ModuleNotFoundError:
-        return None
-
-
-def get_dicts(data, year, q):
-    """
-    Извлича (is_dict, bs_dict, cf_dict) от заредените данни.
-    Q4 скриптовете пакетират данните под ключ по година.
-    """
-    if data is None:
-        return {}, {}, {}
-    # Q4 скриптовете имат структура {"2025": {...}, "2024": {...}}
-    if str(year) in data:
-        d = data[str(year)]
-        return (
-            d.get("income_statement", {}),
-            d.get("balance_sheet", {}),
-            d.get("cash_flows", {}),
-        )
-    return (
-        data.get("income_statement", {}),
-        data.get("balance_sheet", {}),
-        data.get("cash_flows", {}),
-    )
-
-
-def src(dicts, key):
-    for d in dicts:
-        if key in d:
-            return d[key]
-    return None
-
-
-# ── Дефиниция на редовете (раздел, етикет, ключ) ─────────────────────────────
+# Дефиниция на редовете (раздел, етикет, ключ) — споделена за всички компании
+# Добавете нови редове тук ако е нужно за специфична компания.
 ROWS = [
     # Отчет за всеобхватния доход
     ("Приходи и разходи", "Приходи от продажби",                       "приходи_от_продажби"),
@@ -153,17 +135,81 @@ ROWS = [
 ]
 
 
+# ── Помощни функции ───────────────────────────────────────────────────────────
+
+def col(year, q):
+    """Генерира заглавие на колона: 'Q1 2025 (3М)'"""
+    return f"Q{q} {year} ({QUARTER_SUFFIX[q]})"
+
+
+def discover_years(company_dir):
+    """
+    Открива автоматично наличните години от extract_qX_YYYY.py файлове
+    в директорията на компанията. Не е нужен ръчен ALL_YEARS списък.
+    """
+    pattern = os.path.join(company_dir, "extract_q*_*.py")
+    years = set()
+    for path in glob.glob(pattern):
+        m = re.search(r"extract_q\d+_(\d{4})\.py$", path)
+        if m:
+            years.add(int(m.group(1)))
+    return sorted(years)
+
+
+def load_quarter(company_dir, year, q):
+    """
+    Зарежда extract_qQ_YYYY.py от директорията на компанията.
+    При липсващ скрипт връща None.
+    """
+    module_name = f"extract_q{q}_{year}"
+    # Добавяме company_dir в началото на sys.path временно
+    if company_dir not in sys.path:
+        sys.path.insert(0, company_dir)
+    # Премахваме кеша ако модулът е зареждан преди (за различни компании)
+    if module_name in sys.modules:
+        del sys.modules[module_name]
+    try:
+        mod = importlib.import_module(module_name)
+        return mod.get_data()
+    except ModuleNotFoundError:
+        return None
+
+
+def get_dicts(data, year, q):
+    """
+    Извлича (is_dict, bs_dict, cf_dict) от заредените данни.
+    Q4 скриптовете пакетират данните под ключ по година.
+    """
+    if data is None:
+        return {}, {}, {}
+    if str(year) in data:
+        d = data[str(year)]
+        return (
+            d.get("income_statement", {}),
+            d.get("balance_sheet", {}),
+            d.get("cash_flows", {}),
+        )
+    return (
+        data.get("income_statement", {}),
+        data.get("balance_sheet", {}),
+        data.get("cash_flows", {}),
+    )
+
+
+def src(dicts, key):
+    for d in dicts:
+        if key in d:
+            return d[key]
+    return None
+
+
 # ── Строители на таблици ──────────────────────────────────────────────────────
 
-def build_annual_rows(year_data):
-    """
-    Годишна CSV: взима Q4 данните за всяка година (FY стойности).
-    year_data: {year: {q: data_dict}}
-    """
+def build_annual_rows(year_data, all_years):
     rows_out = []
     for section, label, key in ROWS:
         row = {"раздел": section, "счетоводен_ред": label}
-        for year in ALL_YEARS:
+        for year in all_years:
             q4_data = year_data.get(year, {}).get(4)
             dicts = get_dicts(q4_data, year, 4)
             row[str(year)] = src(dicts, key)
@@ -172,10 +218,6 @@ def build_annual_rows(year_data):
 
 
 def build_quarterly_rows_for_year(year, year_quarters):
-    """
-    Тримесечна CSV за конкретна година (Q1–Q4 YTD).
-    year_quarters: {q: data_dict}
-    """
     rows_out = []
     for section, label, key in ROWS:
         row = {"раздел": section, "счетоводен_ред": label}
@@ -187,15 +229,11 @@ def build_quarterly_rows_for_year(year, year_quarters):
     return rows_out
 
 
-def build_all_quarters_rows(year_data):
-    """
-    Обединена тримесечна CSV: всички години × 4 тримесечия.
-    year_data: {year: {q: data_dict}}
-    """
+def build_all_quarters_rows(year_data, all_years):
     rows_out = []
     for section, label, key in ROWS:
         row = {"раздел": section, "счетоводен_ред": label}
-        for year in ALL_YEARS:
+        for year in all_years:
             for q in range(1, 5):
                 data = year_data.get(year, {}).get(q)
                 dicts = get_dicts(data, year, q)
@@ -212,49 +250,80 @@ def write_csv(filepath, rows, fieldnames):
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
-    print(f"Записан: {filepath}")
+    print(f"  Записан: {filepath}")
 
 
 # ── Главна логика ─────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    out_dir = os.path.join(os.path.dirname(__file__), "output")
+    company = parse_args()
 
-    # Зареждаме всички налични скриптове
+    base_dir     = os.path.dirname(os.path.abspath(__file__))
+    company_dir  = os.path.join(base_dir, company)
+    out_dir      = os.path.join(company_dir, "output")
+
+    if not os.path.isdir(company_dir):
+        print(f"Грешка: директорията '{company_dir}' не съществува.")
+        sys.exit(1)
+
+    print(f"\nКомпания: {company}")
+    print(f"Директория: {company_dir}")
+
+    # ── Засичане на наличните години ─────────────────────────────────────────
+    all_years = discover_years(company_dir)
+    if not all_years:
+        print(f"Грешка: не са намерени extract_qX_YYYY.py файлове в '{company_dir}'.")
+        sys.exit(1)
+    print(f"Открити години: {all_years}\n")
+
+    # ── Зареждане на данни ────────────────────────────────────────────────────
     year_data = {}
-    for year in ALL_YEARS:
+    for year in all_years:
         year_data[year] = {}
         for q in range(1, 5):
-            data = load_quarter(year, q)
+            data = load_quarter(company_dir, year, q)
             if data is not None:
                 year_data[year][q] = data
                 print(f"  Зареден: extract_q{q}_{year}.py")
-            # липсващите скриптове просто се пропускат (колоните остават празни)
 
-    # 1. Годишна CSV
-    annual_rows = build_annual_rows(year_data)
+    print()
+
+    # ── 1. Годишна CSV ────────────────────────────────────────────────────────
+    annual_rows = build_annual_rows(year_data, all_years)
     write_csv(
-        os.path.join(out_dir, "shelly_annual.csv"),
+        os.path.join(out_dir, f"{company}_annual.csv"),
         annual_rows,
-        ["раздел", "счетоводен_ред"] + [str(y) for y in ALL_YEARS],
+        ["раздел", "счетоводен_ред"] + [str(y) for y in all_years],
     )
 
-    # 2. Тримесечни CSV по година (само за години с поне 1 зареден скрипт)
-    for year in ALL_YEARS:
-        if not year_data[year]:
+    # ── 2. Тримесечни CSV по година ───────────────────────────────────────────
+    for year in all_years:
+        if not year_data.get(year):
             continue
         q_rows = build_quarterly_rows_for_year(year, year_data[year])
         write_csv(
-            os.path.join(out_dir, f"shelly_quarterly_{year}.csv"),
+            os.path.join(out_dir, f"{company}_quarterly_{year}.csv"),
             q_rows,
             ["раздел", "счетоводен_ред"] + [col(year, q) for q in range(1, 5)],
         )
 
-    # 3. Обединена тримесечна CSV (всички години)
-    all_q_cols = [col(year, q) for year in ALL_YEARS for q in range(1, 5)]
-    all_q_rows = build_all_quarters_rows(year_data)
+    # ── 3. Обединена тримесечна CSV (всички години) ───────────────────────────
+    all_q_cols = [col(year, q) for year in all_years for q in range(1, 5)]
+    all_q_rows = build_all_quarters_rows(year_data, all_years)
+    all_csv_path = os.path.join(out_dir, f"{company}_quarterly_all.csv")
     write_csv(
-        os.path.join(out_dir, "shelly_quarterly_all.csv"),
+        all_csv_path,
         all_q_rows,
         ["раздел", "счетоводен_ред"] + all_q_cols,
     )
+
+    # ── 4. Копиране в docs/companies/<company>/data.csv ───────────────────────
+    docs_target = os.path.join(base_dir, "..", "docs", "companies", company, "data.csv")
+    docs_target = os.path.normpath(docs_target)
+    if os.path.isdir(os.path.dirname(docs_target)):
+        shutil.copy2(all_csv_path, docs_target)
+        print(f"  Копиран:  {docs_target}")
+    else:
+        print(f"  Пропуснато копиране — директорията не съществува: {os.path.dirname(docs_target)}")
+
+    print(f"\nГотово.\n")
