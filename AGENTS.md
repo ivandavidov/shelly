@@ -45,22 +45,27 @@ shelly/
 │   ├── styles.css                       ← CSS стилове
 │   ├── app.js                           ← цялата логика на дашборда
 │   └── companies/
-│       └── shelly/
-│           ├── meta.json                ← метаданни за компанията
-│           └── data.csv                 ← финансови данни (генериран файл)
+│       ├── shelly/
+│       │   ├── meta.json                ← метаданни за компанията
+│       │   └── data.csv                 ← финансови данни (генериран файл)
+│       └── plejd/
+│           ├── meta.json                ← метаданни за Plejd
+│           └── data.csv                 ← финансови данни
 │
 └── financial_data/                      ← Python pipeline за данни
     ├── AGENTS.md                        ← документация за pipeline-а
     ├── generate_csv.py                  ← генератор (company-agnostic)
     ├── validate.py                      ← валидатор (company-agnostic)
-    └── shelly/                          ← extract скриптове за Шелли
-        ├── extract_q1_2021.py
+    ├── shelly/                          ← extract скриптове за Шелли
+    │   ├── extract_q1_2021.py
+    │   ├── ...
+    │   ├── extract_q4_2025.py
+    │   └── output/
+    └── plejd/                          ← extract скриптове за Plejd
+        ├── extract_q1_2022.py
         ├── ...
         ├── extract_q4_2025.py
-        └── output/                      ← генерирани CSV файлове
-            ├── shelly_annual.csv
-            ├── shelly_quarterly_YYYY.csv
-            └── shelly_quarterly_all.csv
+        └── output/
 ```
 
 ---
@@ -167,7 +172,7 @@ let csvData   = {};         // { "Приходи от продажби": { "Q1 2
 let periods   = [];         // [{ q, year, months, key, colIdx }, ...]
 let allYears  = [];         // ["2021", "2022", ..., "2025"]
 let activeYears = new Set();// текущо активни години (от checkboxes)
-let currentMode = 'quarterly'; // 'quarterly' | 'annual' | 'ltm'
+let currentMode = 'ltm'; // 'quarterly' | 'annual' | 'ltm'
 let meta      = {};         // съдържание на meta.json
 const charts  = {};         // { canvasId: Chart instance }
 
@@ -227,6 +232,7 @@ let DISPLAY_PER_SHARE_UNIT = 'EUR';
 | `csv(label, periodKey)` | Чете стойност от `csvData`; конвертира BGN→EUR ако е нужно |
 | `buildSeriesData()` | Строи масив за текущия mode (quarterly/annual/LTM) |
 | `buildBalanceData()` | Строи масив от BS snapshot обекти |
+| `updateModeButtons()` | Синхронизира визуалните бутони с currentMode |
 | `refresh()` | Главна функция — извиква всички render* при смяна на mode/years |
 | `mkChart(id, config)` | Destroy + create Chart.js инстанция |
 
@@ -246,11 +252,11 @@ function csv(label, periodKey) {
 
 ```js
 {
-  label,           // напр. "Q1'25" / "2025" / "LTM Q4'25"
+  label,           // напр. "Q1'25" / "2025" / "2025" (LTM only shows if spanning 2+ years)
   revenue, net_profit, gross_profit, ebit,
   cogs, sell_exp, admin_exp, other_exp,
   fin_inc, fin_exp,
-  cf_op, cf_fcf, cf_net, capex,
+  cf_op, cf_inv, cf_fin, cf_fcf, cf_net, capex,
   dividends,
   eps
 }
@@ -275,6 +281,7 @@ function csv(label, periodKey) {
 - **Quarterly:** standalone Q стойности = YTD(Q) − YTD(Q-1); за Q1 = YTD директно
 - **Annual:** Q4 YTD стойности = FY стойности
 - **LTM:** сума на последните 4 standalone тримесечия (само IS/CF); BS = последен snapshot
+  - LTM bar се показва само ако последните 4 тримесечия обхващат 2+ различни години (за избягване на дублиране с annual данни)
 - **Баланс:** винаги моментни (point-in-time) стойности — не се сумират
 
 ### Брой акции

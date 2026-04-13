@@ -78,7 +78,7 @@ let csvData = {};      // csvData[rowLabel][colKey] = string value
 let periods = [];      // [{q, year, months, key}]
 let allYears = [];     // ['2021','2022',...]
 let activeYears = new Set();
-let currentMode = 'quarterly';
+let currentMode = 'ltm';
 const charts = {};
 
 // ── Company routing ───────────────────────────────────────────────────────────
@@ -260,12 +260,25 @@ function bsE(label, year, q) { return toEUR(qBS(label, year, q), year); }
 const _shareCountCache = {};
 function sharesForYear(year) {
   if (_shareCountCache[year]) return _shareCountCache[year];
-  const np = ytdRaw(ROW.net_profit, year, 4);
-  const eps = ytdRaw(ROW.eps, year, 4);
+  let np = null;
+  let eps = null;
+  let q = 4;
+  while(q > 0) {
+    np = ytdRaw(ROW.net_profit, year, q);
+    eps = ytdRaw(ROW.eps, year, q);
+    if(np && eps) {
+      break;
+    }
+    --q;
+  }
+  if(!np || !eps) {
+    np = ytdRaw(ROW.net_profit, year - 1, 4);
+    eps = ytdRaw(ROW.eps, year - 1, 4);
+  }
   if (np && eps && eps > 0) {
     _shareCountCache[year] = Math.round(np * 1000 / eps);
   } else {
-    _shareCountCache[year] = 18000000;
+    _shareCountCache[year] = 180000000;
   }
   return _shareCountCache[year];
 }
@@ -365,6 +378,8 @@ function buildAnnualData() {
     .filter(yr => ytdRaw(ROW.revenue, yr, 4) != null)  // Only include years with Q4 data
     .map(yr => {
       const cfOp  = aE(ROW.cf_op,  yr);
+      const cfInv = aE(ROW.cf_inv, yr);
+      const cfFin = aE(ROW.cf_fin, yr);
       const capex = aE(ROW.capex,  yr);
       const cashEnd   = ytdRaw(ROW.cash_end,   yr, 4);
       const cashStart = ytdRaw(ROW.cash_start, yr, 1);
@@ -383,6 +398,8 @@ function buildAnnualData() {
         finExp:   Math.abs(aE(ROW.fin_exp, yr) ?? 0) || null,
         tax:      Math.abs(aE(ROW.tax,     yr) ?? 0) || null,
         cf_op:  cfOp,
+        cf_inv: cfInv,
+        cf_fin: cfFin,
         cf_fcf: cfOp != null && capex != null ? cfOp + capex : null,
         cf_net: cfNet,
         eps:    aEPS(yr),
@@ -413,6 +430,8 @@ function buildLTMData() {
   
   const annual = yearsWithQ4.map(yr => {
     const cfOp  = aE(ROW.cf_op,  yr);
+    const cfInv = aE(ROW.cf_inv, yr);
+    const cfFin = aE(ROW.cf_fin, yr);
     const capex = aE(ROW.capex,  yr);
     const cashEnd   = ytdRaw(ROW.cash_end,   yr, 4);
     const cashStart = ytdRaw(ROW.cash_start, yr, 1);
@@ -430,7 +449,7 @@ function buildLTMData() {
       finInc:   aE(ROW.fin_inc, yr),
       finExp:   Math.abs(aE(ROW.fin_exp, yr) ?? 0) || null,
       tax:      Math.abs(aE(ROW.tax,     yr) ?? 0) || null,
-      cf_op: cfOp, cf_fcf: cfOp != null && capex != null ? cfOp + capex : null, cf_net: cfNet,
+      cf_op: cfOp, cf_inv: cfInv, cf_fin: cfFin, cf_fcf: cfOp != null && capex != null ? cfOp + capex : null, cf_net: cfNet,
       eps: aEPS(yr), sourceYear: yr, shareCount: sharesForYear(yr),
     };
   });
@@ -450,6 +469,11 @@ function buildLTMData() {
   }
   if (allQ.length >= 4) {
     const w4 = allQ.slice(-4);
+    // Skip LTM if last 4 quarters are all from the same year (would duplicate annual)
+    const ltmYears = new Set(w4.map(q => q.sourceYear));
+    if (ltmYears.size <= 1) {
+      return annual;
+    }
     const sumQ = key => {
       const vals = w4.map(q => q[key]);
       return vals.some(v => v == null) ? null : vals.reduce((a, b) => a + b, 0);
@@ -501,13 +525,13 @@ function buildBalanceData() {
     const annual = allYears.slice(0, -1)
       .map(yr => bsPoint(yr, 4, yr))
       .filter(b => b.assets != null);
-    // Latest available quarter
+    // Latest available quarter (use year as label, not "LTM Qx'yy")
     let latest = null;
     outer: for (let yi = allYears.length - 1; yi >= 0; yi--) {
       const yr = allYears[yi];
       for (let q = 4; q >= 1; q--) {
         if (ytdRaw(ROW.total_assets, yr, q) != null) {
-          latest = bsPoint(yr, q, `LTM Q${q}'${yr.slice(2)}`);
+          latest = bsPoint(yr, q, yr);
           break outer;
         }
       }
@@ -1190,8 +1214,12 @@ function refresh() {
 
 function setMode(mode) {
   currentMode = mode;
-  document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.mode === mode));
+  updateModeButtons();
   refresh();
+}
+
+function updateModeButtons() {
+  document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.mode === currentMode));
 }
 
 function updateYearFilter() {
@@ -1291,6 +1319,7 @@ async function init() {
     document.getElementById('loading').style.display = 'none';
     document.getElementById('dashboard').style.display = 'block';
     refresh();
+    updateModeButtons();
   } catch (e) {
     document.getElementById('loading').style.display = 'none';
     document.getElementById('error-banner').style.display = 'block';
