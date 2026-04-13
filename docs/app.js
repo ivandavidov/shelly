@@ -1289,6 +1289,9 @@ async function init() {
       if (m) periods.push({ q: +m[1], year: m[2], months: +m[3], key: headers[i], colIdx: i });
     }
 
+    // Filter to only include data from 2022 onwards
+    periods = periods.filter(p => parseInt(p.year) >= 2022);
+
     // Build allYears from periods
     allYears = [...new Set(periods.map(p => p.year))].sort();
 
