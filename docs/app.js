@@ -3,6 +3,7 @@ let BGN_PER_EUR = 1.95583;
 let EUR_TRANSITION_YEAR = 2026;
 let DISPLAY_AMOUNT_UNIT = 'хил. EUR';
 let DISPLAY_PER_SHARE_UNIT = 'EUR';
+let NO_CONVERSION = false;
 
 // CSV row labels
 const ROW = {
@@ -90,7 +91,40 @@ const charts = {};
  */
 function getCompanyId() {
   const params = new URLSearchParams(window.location.search);
-  return (params.get('company') || 'shelly').replace(/[^a-zA-Z0-9_-]/g, '');
+  let company = params.get('company') || 'shelly';
+  company = company.replace(/[^a-zA-Z0-9_-]/g, '');
+  
+  // Validate company is in AVAILABLE_COMPANIES, otherwise default to shelly
+  if (!AVAILABLE_COMPANIES.some(c => c.id === company)) {
+    company = 'shelly';
+  }
+  return company;
+}
+
+const AVAILABLE_COMPANIES = [
+  { id: 'shelly', name: 'Шелли Груп АД' },
+  { id: 'plejd', name: 'Plejd AB' },
+];
+
+function populateCompanySelector() {
+  const current = getCompanyId();
+  const sel = document.getElementById('company-selector');
+  if (!sel) return;
+  
+  AVAILABLE_COMPANIES.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = c.name;
+    if (c.id === current) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+function switchCompany(companyId) {
+  if (!companyId) return;
+  const url = new URL(window.location.href);
+  url.searchParams.set('company', companyId);
+  window.location.href = url.toString();
 }
 
 /**
@@ -119,10 +153,11 @@ function applyMeta(m) {
 
   // Currency constants from meta
   if (m.currency) {
-    BGN_PER_EUR         = m.currency.rate_bgn_eur    ?? BGN_PER_EUR;
-    EUR_TRANSITION_YEAR = m.currency.eur_from_year   ?? EUR_TRANSITION_YEAR;
+    NO_CONVERSION      = m.currency.no_conversion    ?? NO_CONVERSION;
+    BGN_PER_EUR        = m.currency.rate_bgn_eur      ?? m.currency.rate_sek_eur ?? BGN_PER_EUR;
+    EUR_TRANSITION_YEAR = NO_CONVERSION ? null : (m.currency.eur_from_year ?? EUR_TRANSITION_YEAR);
     DISPLAY_AMOUNT_UNIT = m.currency.display_unit    ?? DISPLAY_AMOUNT_UNIT;
-    DISPLAY_PER_SHARE_UNIT = m.currency.display      ?? DISPLAY_PER_SHARE_UNIT;
+    DISPLAY_PER_SHARE_UNIT = m.currency.display        ?? DISPLAY_PER_SHARE_UNIT;
   }
 
   // KPI labels — append display currency
@@ -151,8 +186,10 @@ const fmtBGN = fmtMoney;
 function fmtAmountCompact(v) {
   if (v == null || isNaN(v)) return '–';
   const abs = Math.abs(v);
-  if (abs >= 1000) return (v < 0 ? '-' : '') + (Math.abs(v)/1000).toLocaleString('bg-BG',{minimumFractionDigits:1,maximumFractionDigits:1}) + ` млн. EUR`;
-  return v.toLocaleString('bg-BG',{minimumFractionDigits:0,maximumFractionDigits:0}) + ` хил. EUR`;
+  const unit = DISPLAY_AMOUNT_UNIT;  // e.g., "хил. EUR" or "хил. SEK"
+  const unitShort = unit.replace('хил. ', '');  // "EUR" or "SEK"
+  if (abs >= 1000) return (v < 0 ? '-' : '') + (Math.abs(v)/1000).toLocaleString('bg-BG',{minimumFractionDigits:1,maximumFractionDigits:1}) + ` млн. ${unitShort}`;
+  return v.toLocaleString('bg-BG',{minimumFractionDigits:0,maximumFractionDigits:0}) + ` ${unit}`;
 }
 function fmtAmountTooltip(v, absolute = false) {
   const val = absolute ? Math.abs(v) : v;
@@ -181,6 +218,7 @@ function numCell(v, isMargin = false) {
 // ── Currency conversion ───────────────────────────────────────────────────────
 function toEUR(v, year) {
   if (v == null || isNaN(v)) return null;
+  if (EUR_TRANSITION_YEAR === null) return v;  // no conversion configured
   return +year >= EUR_TRANSITION_YEAR ? v : v / BGN_PER_EUR;
 }
 // EPS is per-share in BGN — same conversion
@@ -269,6 +307,8 @@ function bsPoint(year, q, label) {
 function isPoint(year, q, label) {
   const cfOp  = qE(ROW.cf_op,  year, q);
   const capex = qE(ROW.capex,  year, q);
+  const cfInv = qE(ROW.cf_inv, year, q);
+  const cfFin = qE(ROW.cf_fin, year, q);
   // Net change in cash: cash_end(q) - cash_end(q-1) [or cash_start for q=1]
   const cashQ  = ytdRaw(ROW.cash_end,   year, q);
   const cashPrev = q === 1 ? ytdRaw(ROW.cash_start, year, 1) : ytdRaw(ROW.cash_end, year, q - 1);
@@ -287,6 +327,8 @@ function isPoint(year, q, label) {
     finExp:      Math.abs(qE(ROW.fin_exp, year, q) ?? 0) || null,
     tax:         Math.abs(qE(ROW.tax,     year, q) ?? 0) || null,
     cf_op:       cfOp,
+    cf_inv:      cfInv,
+    cf_fin:      cfFin,
     cf_fcf:      cfOp != null && capex != null ? cfOp + capex : null,
     cf_net:      cfNet,
     eps:         toEUR_eps(qBS(ROW.eps, year, q), year),  // EPS is already period-specific in CSV
@@ -312,8 +354,16 @@ function aEPS(year) {
 
 // ── Build series (IS/CF) data ─────────────────────────────────────────────────
 function buildSeriesData() {
-  if (currentMode === 'annual') {
-    return allYears.map(yr => {
+  const result = currentMode === 'annual' ? buildAnnualData() 
+               : currentMode === 'quarterly' ? buildQuarterlyData()
+               : buildLTMData();
+  return result;
+}
+
+function buildAnnualData() {
+  return allYears
+    .filter(yr => ytdRaw(ROW.revenue, yr, 4) != null)  // Only include years with Q4 data
+    .map(yr => {
       const cfOp  = aE(ROW.cf_op,  yr);
       const capex = aE(ROW.capex,  yr);
       const cashEnd   = ytdRaw(ROW.cash_end,   yr, 4);
@@ -340,87 +390,91 @@ function buildSeriesData() {
         shareCount: sharesForYear(yr),
       };
     });
-  }
+}
 
-  if (currentMode === 'quarterly') {
-    const result = [];
-    for (const yr of allYears) {
-      if (!activeYears.has(yr)) continue;
-      for (let q = 1; q <= 4; q++) {
-        if (ytdRaw(ROW.revenue, yr, q) == null) continue;
-        const label = `Q${q}'${yr.slice(2)}`;
-        const pt = isPoint(yr, q, label);
-        pt.eps = qEPS(yr, q);
-        result.push(pt);
-      }
+function buildQuarterlyData() {
+  const result = [];
+  for (const yr of allYears) {
+    if (!activeYears.has(yr)) continue;
+    for (let q = 1; q <= 4; q++) {
+      if (ytdRaw(ROW.revenue, yr, q) == null) continue;
+      const label = `Q${q}'${yr.slice(2)}`;
+      const pt = isPoint(yr, q, label);
+      pt.eps = qEPS(yr, q);
+      result.push(pt);
     }
-    return result;
   }
+  return result;
+}
 
-  if (currentMode === 'ltm') {
-    // Annual bars for all years except the last
-    const annual = allYears.slice(0, -1).map(yr => {
-      const cfOp  = aE(ROW.cf_op,  yr);
-      const capex = aE(ROW.capex,  yr);
-      const cashEnd   = ytdRaw(ROW.cash_end,   yr, 4);
-      const cashStart = ytdRaw(ROW.cash_start, yr, 1);
-      const cfNet = (cashEnd != null && cashStart != null) ? toEUR(cashEnd - cashStart, yr) : null;
-      return {
-        label: yr,
-        revenue:      aE(ROW.revenue,     yr),
-        net_profit:   aE(ROW.net_profit,  yr),
-        gross_profit: aE(ROW.gross_profit,yr),
-        ebit:         aE(ROW.ebit,        yr),
-        cogs:     Math.abs(aE(ROW.cogs,     yr) ?? 0) || null,
-        sellExp:  Math.abs(aE(ROW.sell_exp, yr) ?? 0) || null,
-        adminExp: Math.abs(aE(ROW.admin_exp,yr) ?? 0) || null,
-        otherExp: Math.abs(aE(ROW.other_exp,yr) ?? 0) || null,
-        finInc:   aE(ROW.fin_inc, yr),
-        finExp:   Math.abs(aE(ROW.fin_exp, yr) ?? 0) || null,
-        tax:      Math.abs(aE(ROW.tax,     yr) ?? 0) || null,
-        cf_op: cfOp, cf_fcf: cfOp != null && capex != null ? cfOp + capex : null, cf_net: cfNet,
-        eps: aEPS(yr), sourceYear: yr, shareCount: sharesForYear(yr),
-      };
+function buildLTMData() {
+  // Get all years with Q4 data (full year data)
+  const yearsWithQ4 = allYears.filter(yr => ytdRaw(ROW.revenue, yr, 4) != null);
+  
+  const annual = yearsWithQ4.map(yr => {
+    const cfOp  = aE(ROW.cf_op,  yr);
+    const capex = aE(ROW.capex,  yr);
+    const cashEnd   = ytdRaw(ROW.cash_end,   yr, 4);
+    const cashStart = ytdRaw(ROW.cash_start, yr, 1);
+    const cfNet = (cashEnd != null && cashStart != null) ? toEUR(cashEnd - cashStart, yr) : null;
+    return {
+      label: yr,
+      revenue:      aE(ROW.revenue,     yr),
+      net_profit:   aE(ROW.net_profit,  yr),
+      gross_profit: aE(ROW.gross_profit,yr),
+      ebit:         aE(ROW.ebit,        yr),
+      cogs:     Math.abs(aE(ROW.cogs,     yr) ?? 0) || null,
+      sellExp:  Math.abs(aE(ROW.sell_exp, yr) ?? 0) || null,
+      adminExp: Math.abs(aE(ROW.admin_exp,yr) ?? 0) || null,
+      otherExp: Math.abs(aE(ROW.other_exp,yr) ?? 0) || null,
+      finInc:   aE(ROW.fin_inc, yr),
+      finExp:   Math.abs(aE(ROW.fin_exp, yr) ?? 0) || null,
+      tax:      Math.abs(aE(ROW.tax,     yr) ?? 0) || null,
+      cf_op: cfOp, cf_fcf: cfOp != null && capex != null ? cfOp + capex : null, cf_net: cfNet,
+      eps: aEPS(yr), sourceYear: yr, shareCount: sharesForYear(yr),
+    };
+  });
+
+  // Add LTM bar (sum of last 4 quarters)
+  const allQ = [];
+  for (const yr of allYears) {
+    for (let q = 1; q <= 4; q++) {
+      if (ytdRaw(ROW.revenue, yr, q) == null) continue;
+      const label = `Q${q}'${yr.slice(2)}`;
+      const pt = isPoint(yr, q, label);
+      pt.eps = qEPS(yr, q);
+      pt.cf_cap = qE(ROW.capex, yr, q);
+      pt.labelShort = label;
+      allQ.push(pt);
+    }
+  }
+  if (allQ.length >= 4) {
+    const w4 = allQ.slice(-4);
+    const sumQ = key => {
+      const vals = w4.map(q => q[key]);
+      return vals.some(v => v == null) ? null : vals.reduce((a, b) => a + b, 0);
+    };
+    const last = w4[3];
+    const cfOp = sumQ('cf_op');
+    const cfInv = sumQ('cf_inv');
+    const cfFin = sumQ('cf_fin');
+    const cfCap = sumQ('cf_cap');
+    annual.push({
+      label: `LTM ${last.labelShort}`,
+      revenue: sumQ('revenue'), net_profit: sumQ('net_profit'),
+      gross_profit: sumQ('gross_profit'), ebit: sumQ('ebit'),
+      cogs: sumQ('cogs'), sellExp: sumQ('sellExp'), adminExp: sumQ('adminExp'), otherExp: sumQ('otherExp'),
+      finInc: sumQ('finInc'), finExp: sumQ('finExp'), tax: sumQ('tax'),
+      cf_op: cfOp,
+      cf_inv: cfInv,
+      cf_fin: cfFin,
+      cf_fcf: cfOp != null && cfCap != null ? cfOp + cfCap : null,
+      cf_net: sumQ('cf_net'),
+      eps: (() => { const vals = w4.map(q => q.eps); return vals.every(v => v != null) ? vals.reduce((a,b)=>a+b,0) : null; })(),
+      sourceYear: last.sourceYear, quarter: last.quarter, shareCount: last.shareCount,
     });
-
-    // Collect all available quarters
-    const allQ = [];
-    for (const yr of allYears) {
-      for (let q = 1; q <= 4; q++) {
-        if (ytdRaw(ROW.revenue, yr, q) == null) continue;
-        const label = `Q${q}'${yr.slice(2)}`;
-        const pt = isPoint(yr, q, label);
-        pt.eps = qEPS(yr, q);
-        pt.cf_cap = qE(ROW.capex, yr, q);
-        pt.labelShort = label;
-        allQ.push(pt);
-      }
-    }
-    if (allQ.length >= 4) {
-      const w4 = allQ.slice(-4);
-      const sumQ = key => {
-        const vals = w4.map(q => q[key]);
-        return vals.some(v => v == null) ? null : vals.reduce((a, b) => a + b, 0);
-      };
-      const last = w4[3];
-      const cfOp = sumQ('cf_op');
-      const cfCap = sumQ('cf_cap');
-      annual.push({
-        label: `LTM ${last.labelShort}`,
-        revenue: sumQ('revenue'), net_profit: sumQ('net_profit'),
-        gross_profit: sumQ('gross_profit'), ebit: sumQ('ebit'),
-        cogs: sumQ('cogs'), sellExp: sumQ('sellExp'), adminExp: sumQ('adminExp'), otherExp: sumQ('otherExp'),
-        finInc: sumQ('finInc'), finExp: sumQ('finExp'), tax: sumQ('tax'),
-        cf_op: cfOp,
-        cf_fcf: cfOp != null && cfCap != null ? cfOp + cfCap : null,
-        cf_net: sumQ('cf_net'),
-        eps: (() => { const vals = w4.map(q => q.eps); return vals.every(v => v != null) ? vals.reduce((a,b)=>a+b,0) : null; })(),
-        sourceYear: last.sourceYear, quarter: last.quarter, shareCount: last.shareCount,
-      });
-    }
-    return annual;
   }
-  return [];
+  return annual;
 }
 
 // ── Build balance data ────────────────────────────────────────────────────────
@@ -529,17 +583,28 @@ function updateKPIs(series) {
   }
   document.getElementById('kpi-ebitmargin-period').textContent = last?.label || '';
 
-  // EPS: compare last two available annual years
-  const ly = allYears[allYears.length - 1];
-  const py = allYears[allYears.length - 2];
-  const epsLast = ly ? aEPS(ly) : null;
-  const epsPrev = py ? aEPS(py) : null;
-  document.getElementById('kpi-eps').textContent = epsLast != null ? fmtPerShare(epsLast) : '–';
-  if (epsLast && epsPrev) {
-    const ch = (epsLast - epsPrev) / Math.abs(epsPrev) * 100;
-    document.getElementById('kpi-eps-yoy').innerHTML = yoySpan(ch) + ' г/г';
+  // EPS
+  if (currentMode === 'annual') {
+    // Annual mode: use series data (which already has filtered years with Q4 data)
+    const epsFromSeries = series.length > 0 ? series[series.length - 1]?.eps : null;
+    const epsPrev = series.length > 1 ? series[series.length - 2]?.eps : null;
+    document.getElementById('kpi-eps').textContent = epsFromSeries != null ? fmtPerShare(epsFromSeries) : '–';
+    if (epsFromSeries && epsPrev) {
+      const ch = (epsFromSeries - epsPrev) / Math.abs(epsPrev) * 100;
+      document.getElementById('kpi-eps-yoy').innerHTML = yoySpan(ch) + ' г/г';
+    } else {
+      document.getElementById('kpi-eps-yoy').innerHTML = '';
+    }
+    document.getElementById('kpi-eps-period').textContent = series.length >= 2 
+      ? `FY ${series[series.length-1]?.label} vs FY ${series[series.length-2]?.label}` 
+      : (series.length === 1 ? `FY ${series[0]?.label}` : '');
+  } else {
+    // Quarterly/LTM mode: use EPS from series
+    const epsFromSeries = series.length > 0 ? series[series.length - 1]?.eps : null;
+    document.getElementById('kpi-eps').textContent = epsFromSeries != null ? fmtPerShare(epsFromSeries) : '–';
+    document.getElementById('kpi-eps-yoy').innerHTML = '';
+    document.getElementById('kpi-eps-period').textContent = last?.label || '';
   }
-  document.getElementById('kpi-eps-period').textContent = ly && py ? `FY ${ly} vs FY ${py}` : '';
 }
 
 // ── Charts ────────────────────────────────────────────────────────────────────
@@ -587,11 +652,25 @@ function renderYoYGrowthChart(series) {
       npG.push (pn && s.net_profit ? (s.net_profit - pn)/Math.abs(pn)*100 : null);
     }
   } else {
+    // LTM mode: first N items are annual years with Q4 data - compare with previous year
+    const annualCount = series.length - (series[series.length-1]?.label?.startsWith('LTM') ? 1 : 0);
     for (let i = 0; i < series.length; i++) {
-      if (i < 4) { revG.push(null); npG.push(null); continue; }
-      const p = series[i-4];
-      revG.push(p.revenue && series[i].revenue ? (series[i].revenue - p.revenue)/Math.abs(p.revenue)*100 : null);
-      npG.push(p.net_profit && series[i].net_profit ? (series[i].net_profit - p.net_profit)/Math.abs(p.net_profit)*100 : null);
+      // For LTM bar (last item), compare with previous full year
+      if (i === series.length - 1 && series[i]?.label?.startsWith('LTM')) {
+        const prevYearIndex = annualCount - 1;
+        if (prevYearIndex >= 0 && series[prevYearIndex]) {
+          revG.push(series[prevYearIndex].revenue && series[i].revenue ? (series[i].revenue - series[prevYearIndex].revenue)/Math.abs(series[prevYearIndex].revenue)*100 : null);
+          npG.push(series[prevYearIndex].net_profit && series[i].net_profit ? (series[i].net_profit - series[prevYearIndex].net_profit)/Math.abs(series[prevYearIndex].net_profit)*100 : null);
+        } else {
+          revG.push(null); npG.push(null);
+        }
+      } else if (i === 0) {
+        revG.push(null); npG.push(null);
+      } else {
+        const p = series[i-1];
+        revG.push(p.revenue && series[i].revenue ? (series[i].revenue - p.revenue)/Math.abs(p.revenue)*100 : null);
+        npG.push(p.net_profit && series[i].net_profit ? (series[i].net_profit - p.net_profit)/Math.abs(p.net_profit)*100 : null);
+      }
     }
   }
   const opts = cloneOpts();
@@ -748,7 +827,7 @@ function renderReceivablesChart(series, bsData) {
 }
 
 function renderSeasonalityChart() {
-  const years = allYears.slice(-4);
+  const years = [...activeYears].sort().slice(-4);  // Last 4 selected years
   const colors = [C.blue, C.green, C.amber, C.navy, C.teal, C.purple];
   const datasets = years.map((yr, idx) => ({
     label: yr,
@@ -849,16 +928,12 @@ function renderEPSvsFCFChart(series) {
   ]}, options: opts });
 }
 
-function renderBVPSChart() {
+function renderBVPSChart(series) {
   const labels = [], values = [];
-  if (currentMode === 'annual' || currentMode === 'ltm') {
+  
+  if (currentMode === 'quarterly') {
     for (const yr of allYears) {
-      const eq = ytdRaw(ROW.equity, yr, 4);
-      const shares = sharesForYear(yr);
-      if (eq != null) { labels.push(yr); values.push(toEUR((eq * 1000) / shares, yr)); }
-    }
-  } else {
-    for (const yr of allYears) {
+      if (!activeYears.has(yr)) continue;
       for (let q = 1; q <= 4; q++) {
         const eq = ytdRaw(ROW.equity, yr, q);
         if (eq == null) continue;
@@ -867,7 +942,30 @@ function renderBVPSChart() {
         values.push(toEUR((eq * 1000) / shares, yr));
       }
     }
+  } else {
+    // Annual or LTM mode
+    for (const s of series) {
+      let eq = null;
+      let yr = s.sourceYear || s.label;
+      
+      if (s.label?.startsWith('LTM')) {
+        // For LTM: get equity from the last available quarter
+        for (let q = 4; q >= 1; q--) {
+          eq = ytdRaw(ROW.equity, yr, q);
+          if (eq != null) break;
+        }
+      } else {
+        // For annual years: get equity from Q4
+        eq = ytdRaw(ROW.equity, yr, 4);
+      }
+      
+      if (eq == null) continue;
+      const shares = s.shareCount || sharesForYear(yr);
+      labels.push(s.label);
+      values.push(toEUR((eq * 1000) / shares, yr));
+    }
   }
+  
   const opts = cloneOpts();
   opts.plugins.tooltip.callbacks = { label: ctx => ` BVPS: ${fmtPerShare(ctx.parsed.y)}` };
   opts.scales.y.ticks.callback = v => fmtPerShare(v, 1);
@@ -960,7 +1058,16 @@ function renderCashFlowTable(series) {
       }
     }
   } else {
-    tableData = series.map(s => ({ label: s.label, cfOp: s.cf_op, cfInv: null, cfFin: null, cfNet: s.cf_net, capex: null, fcfOverride: s.cf_fcf }));
+    // LTM mode: use series data
+    tableData = series.map(s => ({ 
+      label: s.label, 
+      cfOp: s.cf_op, 
+      cfInv: s.cf_inv, 
+      cfFin: s.cf_fin, 
+      cfNet: s.cf_net, 
+      capex: s.cogs,  // CAPEX stored in cogs field for quarterly data
+      fcfOverride: s.cf_fcf 
+    }));
   }
   document.getElementById('cf-thead').innerHTML =
     '<th>Показател</th>' + tableData.map(d => `<th>${d.label}</th>`).join('');
@@ -1009,8 +1116,8 @@ function exportCSV() {
   const series  = buildSeriesData();
   const bsData  = buildBalanceData();
   const rows = [];
-  rows.push(['Валута на визуализация','EUR']);
-  rows.push(['Курс за периоди до 2026', BGN_PER_EUR]);
+  rows.push(['Валута на визуализация', NO_CONVERSION ? DISPLAY_PER_SHARE_UNIT : 'EUR']);
+  if (!NO_CONVERSION) rows.push(['Курс за периоди до ' + EUR_TRANSITION_YEAR, BGN_PER_EUR]);
   rows.push([]);
   rows.push(['Показател', ...series.map(s => s.label)]);
   rows.push(['--- Отчет за доходите ---']);
@@ -1041,7 +1148,8 @@ function exportCSV() {
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `shelly_${currentMode}_${new Date().toISOString().slice(0,10)}.csv`;
+  const companyId = getCompanyId();
+  a.download = `${companyId}_${currentMode}_${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
   URL.revokeObjectURL(a.href);
 }
@@ -1068,7 +1176,7 @@ function refresh() {
   renderSeasonalityChart();
   renderWorkingCapitalChart(series, bsData);
   renderEPSvsFCFChart(series);
-  renderBVPSChart();
+  renderBVPSChart(series);
   renderDividendsChart();
   renderDividendPerShareChart();
   renderPayoutRatioChart();
@@ -1124,6 +1232,8 @@ function parseCSV(text) {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
+  populateCompanySelector();
+  
   try {
     const companyId = getCompanyId();
     const baseUrl = `./companies/${companyId}`;

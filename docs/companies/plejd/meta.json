@@ -1,0 +1,32 @@
+{
+  "id": "plejd",
+  "name": "Plejd AB",
+  "subtitle": "Финансов дашборд за инвеститори",
+  "logo_letter": "P",
+
+  "tickers": [
+    {
+      "label": "XSAT: PLEJD",
+      "url": "https://spotlightstockmarket.com/en/companies/irabout?InstrumentId=XSAT01001575"
+    }
+  ],
+
+  "info": {
+    "Борса":   "Spotlight Stock Market (Spotlight Select)",
+    "Тикър":   "PLEJD",
+    "ISIN":    "SE0008014476",
+    "Сектор":  "Industrials / Smart Lighting & Home Automation (IoT)",
+    "ЕИК":     "556782-2648"
+  },
+
+  "currency": {
+    "source":          "SEK",
+    "display":         "SEK",
+    "display_unit":    "хил. SEK",
+    "no_conversion":   true
+  },
+
+  "footer": "Всички суми са визуализирани в хил. SEK. Източници: тримесечни консолидирани финансови отчети на Plejd AB по МСФО.",
+
+  "data_file": "data.csv"
+}

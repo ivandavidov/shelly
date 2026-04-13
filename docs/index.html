@@ -23,6 +23,8 @@
 </header>
 
 <div class="controls-bar">
+  <select id="company-selector" onchange="switchCompany(this.value)">
+  </select>
   <span class="controls-label">Изглед:</span>
   <div class="mode-buttons">
     <button class="mode-btn active" data-mode="quarterly" onclick="setMode('quarterly')">Тримесечно</button>
