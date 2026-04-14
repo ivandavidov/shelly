@@ -78,7 +78,7 @@ let csvData = {};      // csvData[rowLabel][colKey] = string value
 let periods = [];      // [{q, year, months, key}]
 let allYears = [];     // ['2021','2022',...]
 let activeYears = new Set();
-let currentMode = 'ltm';
+let currentMode = 'quarterly';
 const charts = {};
 
 // ── Company routing ───────────────────────────────────────────────────────────
