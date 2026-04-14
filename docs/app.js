@@ -1115,7 +1115,11 @@ function renderCashFlowTable(series) {
   }).join('');
 }
 
-function renderStockInfo() {
+function renderStockInfo(series) {
+  let unit = 'тримесечия';
+  if (currentMode === 'annual') unit = 'години';
+  if (currentMode === 'ltm')    unit = 'периода';
+
   const infoRows = Object.entries(meta.info || {}).map(([k, v]) =>
     `<div class="info-row"><span class="info-label">${k}</span><span class="info-value">${v}</span></div>`
   ).join('');
@@ -1128,7 +1132,7 @@ function renderStockInfo() {
       <div class="info-block-title">Данни за периода</div>
       <div class="info-items">
         <div class="info-row"><span class="info-label">Налични години</span><span class="info-value">${allYears.join(', ')}</span></div>
-        <div class="info-row"><span class="info-label">Брой периоди</span><span class="info-value">${periods.length} тримесечия</span></div>
+        <div class="info-row"><span class="info-label">Брой периоди</span><span class="info-value">${series.length} ${unit}</span></div>
         <div class="info-row"><span class="info-label">Валута</span><span class="info-value">${DISPLAY_AMOUNT_UNIT}</span></div>
       </div>
     </div>
@@ -1207,7 +1211,7 @@ function refresh() {
   renderIncomeTable(series);
   renderBalanceTable(bsData);
   renderCashFlowTable(series);
-  renderStockInfo();
+  renderStockInfo(series);
   document.getElementById('year-filters').style.display =
     currentMode === 'quarterly' ? 'flex' : 'none';
 }
