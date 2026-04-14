@@ -78,7 +78,7 @@ let csvData = {};      // csvData[rowLabel][colKey] = string value
 let periods = [];      // [{q, year, months, key}]
 let allYears = [];     // ['2021','2022',...]
 let activeYears = new Set();
-let currentMode = 'quarterly';
+let currentMode = 'ltm';
 const charts = {};
 
 // ── Company routing ───────────────────────────────────────────────────────────
@@ -839,8 +839,8 @@ function renderDuPontChart(series, bsData) {
 }
 
 function renderReceivablesChart(series, bsData) {
-  const df = currentMode === 'annual' ? 365 : 90;
-  const recvDays = series.map((s,i) => (s.revenue && bsData[i]?.recv != null && s.revenue !== 0) ? (bsData[i].recv/s.revenue)*df : null);
+  const df = (currentMode === 'annual' || currentMode === 'ltm') ? 365 : 90;
+  const recvDays = series.map((s,i) => (s.revenue && bsData[i]?.recv != null && Math.abs(s.revenue) > 0.01) ? (bsData[i].recv / Math.abs(s.revenue)) * df : null);
   const opts = cloneOpts();
   opts.plugins.tooltip.callbacks = { label: ctx => ` ${ctx.parsed.y?.toFixed(0)} дни` };
   opts.scales.y.ticks.callback = v => v.toFixed(0)+' дни';
@@ -868,10 +868,10 @@ function renderSeasonalityChart() {
 }
 
 function renderWorkingCapitalChart(series, bsData) {
-  const df = currentMode === 'annual' ? 365 : 90;
-  const invD = series.map((s,i) => (bsData[i]?.inventories && s.cogs) ? (bsData[i].inventories/s.cogs)*df : null);
-  const recD = series.map((s,i) => (bsData[i]?.recv && s.revenue) ? (bsData[i].recv/s.revenue)*df : null);
-  const payD = series.map((s,i) => (bsData[i]?.trade_payables && s.cogs) ? (bsData[i].trade_payables/s.cogs)*df : null);
+  const df = (currentMode === 'annual' || currentMode === 'ltm') ? 365 : 90;
+  const invD = series.map((s,i) => (bsData[i]?.inventories && s.cogs && Math.abs(s.cogs) > 0.01) ? (bsData[i].inventories / Math.abs(s.cogs)) * df : null);
+  const recD = series.map((s,i) => (bsData[i]?.recv && s.revenue && Math.abs(s.revenue) > 0.01) ? (bsData[i].recv / Math.abs(s.revenue)) * df : null);
+  const payD = series.map((s,i) => (bsData[i]?.trade_payables && s.cogs && Math.abs(s.cogs) > 0.01) ? (bsData[i].trade_payables / Math.abs(s.cogs)) * df : null);
   const ccc  = series.map((s,i) => (invD[i] != null && recD[i] != null && payD[i] != null) ? invD[i]+recD[i]-payD[i] : null);
   const opts = cloneOpts();
   opts.plugins.tooltip.callbacks = { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(0)} дни` };
