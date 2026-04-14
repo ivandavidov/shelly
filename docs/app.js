@@ -525,13 +525,13 @@ function buildBalanceData() {
     const annual = allYears.slice(0, -1)
       .map(yr => bsPoint(yr, 4, yr))
       .filter(b => b.assets != null);
-    // Latest available quarter (use year as label, not "LTM Qx'yy")
+    // Latest available quarter (use LTM label)
     let latest = null;
     outer: for (let yi = allYears.length - 1; yi >= 0; yi--) {
       const yr = allYears[yi];
       for (let q = 4; q >= 1; q--) {
         if (ytdRaw(ROW.total_assets, yr, q) != null) {
-          latest = bsPoint(yr, q, yr);
+          latest = bsPoint(yr, q, `LTM Q${q}'${yr.slice(2)}`);
           break outer;
         }
       }
@@ -1000,8 +1000,9 @@ function renderBVPSChart(series) {
 
 // ── Tables ────────────────────────────────────────────────────────────────────
 function renderIncomeTable(series) {
+  const rev = [...series].reverse();
   document.getElementById('income-thead').innerHTML =
-    '<th>Показател</th>' + series.map(s => `<th>${s.label}</th>`).join('');
+    '<th>Показател</th>' + rev.map(s => `<th>${s.label}</th>`).join('');
   const rows = [
     { key: 'revenue',     label: 'Приходи', bold: true },
     { key: 'gross_profit',label: 'Брутна печалба', bold: true },
@@ -1013,7 +1014,7 @@ function renderIncomeTable(series) {
   ];
   document.getElementById('income-tbody').innerHTML = rows.map(row => {
     const cls = row.sep ? 'separator' : row.isMargin ? 'margin-row' : '';
-    const cells = series.map(s => {
+    const cells = rev.map(s => {
       let v;
       if      (row.key === 'gross_margin') v = s.revenue ? s.gross_profit/s.revenue*100 : null;
       else if (row.key === 'ebit_margin')  v = s.revenue ? s.ebit/s.revenue*100 : null;
@@ -1027,8 +1028,9 @@ function renderIncomeTable(series) {
 }
 
 function renderBalanceTable(bsData) {
+  const rev = [...bsData].reverse();
   document.getElementById('balance-thead').innerHTML =
-    '<th>Показател</th>' + bsData.map(b => `<th>${b.label}</th>`).join('');
+    '<th>Показател</th>' + rev.map(b => `<th>${b.label}</th>`).join('');
   const rows = [
     { key: 'assets',      label: 'Общо активи', bold: true },
     { key: 'cash',        label: 'Пари' },
@@ -1039,7 +1041,7 @@ function renderBalanceTable(bsData) {
   ];
   document.getElementById('balance-tbody').innerHTML = rows.map(row => {
     const cls = row.sep ? 'separator' : '';
-    const cells = bsData.map(b => {
+    const cells = rev.map(b => {
       if (row.key === 'de') {
         const v = (b.equity && b.equity !== 0) ? b.liabilities/b.equity : null;
         if (v == null) return '<td>–</td>';
@@ -1094,7 +1096,7 @@ function renderCashFlowTable(series) {
     }));
   }
   document.getElementById('cf-thead').innerHTML =
-    '<th>Показател</th>' + tableData.map(d => `<th>${d.label}</th>`).join('');
+    '<th>Показател</th>' + [...tableData].reverse().map(d => `<th>${d.label}</th>`).join('');
   const rows = [
     { key: 'cfOp',  label: 'Оперативен CF', bold: true },
     { key: 'cfInv', label: 'Инвестиционен CF' },
@@ -1104,7 +1106,8 @@ function renderCashFlowTable(series) {
   ];
   document.getElementById('cf-tbody').innerHTML = rows.map(row => {
     const cls = row.sep ? 'separator' : '';
-    const cells = tableData.map(d => {
+    const revTable = [...tableData].reverse();
+    const cells = revTable.map(d => {
       const v = row.key === 'fcf'
         ? (d.fcfOverride !== undefined ? d.fcfOverride : (d.cfOp != null && d.capex != null ? d.cfOp + d.capex : null))
         : d[row.key];
