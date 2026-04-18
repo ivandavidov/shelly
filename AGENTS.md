@@ -1,5 +1,8 @@
 # AGENTS.md — Финансов дашборд (multi-company)
 
+> [!IMPORTANT]
+> **ЗЛАТНО ПРАВИЛО ЗА СИГУРНОСТ:** Агентите НИКОГА и при никакви обстоятелства не трябва да изпълняват `git commit` или `git push` без 100% изрично и недвусмислено потвърждение от страна на потребителя за всяко конкретно действие. Проактивното комитване или пушване на код е строго забранено.
+
 Пълна документация за структурата, данните и логиката на проекта. Предназначена за AI агенти и разработчици, които поддържат или разширяват дашборда.
 
 ---
@@ -255,7 +258,7 @@ function csv(label, periodKey) {
   label,           // напр. "Q1'25" / "2025" / "2025" (LTM only shows if spanning 2+ years)
   revenue, net_profit, gross_profit, ebit,
   cogs, sell_exp, admin_exp, other_exp,
-  fin_inc, fin_exp,
+  fin_inc, fin_exp, tax,
   cf_op, cf_inv, cf_fin, cf_fcf, cf_net, capex,
   dividends,
   eps
@@ -294,19 +297,52 @@ function csv(label, periodKey) {
 
 ## 6. Графики и таблици
 
+### KPI карти (два реда, по 4 карти)
+
+**Ред 1 — основни показатели:**
+
+| ID | Описание |
+|----|----------|
+| `kpi-revenue` | Приходи (текущ период) + YoY % |
+| `kpi-netprofit` | Нетна печалба + YoY % |
+| `kpi-ebitmargin` | EBIT марж % |
+| `kpi-eps` | EPS на акция + YoY % |
+
+**Ред 2 — рентабилност и дълг:**
+
+| ID | Описание |
+|----|----------|
+| `kpi-roa` | ROA = Нетна печалба / Активи |
+| `kpi-roce` | ROCE = EBIT / (Активи − Тек. пасиви) |
+| `kpi-fcf-margin` | FCF марж = FCF / Приходи |
+| `kpi-debt-payback` | Нетен дълг / FCF (години; annualized в quarterly mode) |
+
+KPI-тата от ред 2 се попълват от `updateRatioKPIs(series, bsData)`.
+
+### Графики
+
 | Canvas ID | Render функция | Описание |
 |-----------|---------------|----------|
 | `chart-revenue` | `renderRevenueChart` | Bars: Приходи + Нетна печалба |
 | `chart-margins` | `renderMarginsChart` | Lines: Брутен/EBIT/Нетен марж % |
 | `chart-yoy-growth` | `renderYoYGrowthChart` | Lines: Растеж г/г % |
+| `chart-growth-lines` | `renderGrowthLinesChart` | Lines: Нормализиран растеж (база 100) за Revenue/EBIT/NP/EPS |
 | `chart-expense-breakdown` | `renderExpenseBreakdownChart` | Stacked bars: разходна структура |
+| `chart-rentability` | `renderRentabilityChart` | Lines: ROA / ROCE / ROIC |
+| `chart-tax-rate` | `renderTaxRateChart` | Bar: Ефективна данъчна ставка % = tax / EBT |
 | `chart-cashflow` | `renderCashflowChart` | Bars: OCF / Invest.CF / Financ.CF |
 | `chart-fcf` | `renderFCFChart` | Bars: FCF (зелено/червено) |
+| `chart-cf-efficiency` | `renderCFEfficiencyChart` | Lines: OCF/Revenue, FCF/Revenue, CAPEX/Revenue % |
+| `chart-debt-payback` | `renderDebtPaybackChart` | Bars: Години за погасяване (Нетен дълг / FCF); цветово кодирани <3/<6/≥6 |
 | `chart-interest-coverage` | `renderInterestCoverageChart` | Bar: EBIT / Fin.Exp (x) |
 | `chart-earnings-quality` | `renderEarningsQualityChart` | Line: OCF / Net Profit |
+| `chart-accruals` | `renderAccrualsChart` | Line: Accruals ratio = (NP − OCF) / Средни активи |
 | `chart-balance` | `renderBalanceChart` | Stacked bars: Капитал + Пасиви |
 | `chart-asset-growth` | `renderAssetGrowthChart` | Lines: Активи / Капитал / Пари |
+| `chart-asset-composition` | `renderAssetCompositionChart` | Stacked 100%: Пари/Вземания/Запаси/Др. тек./Нетек. |
+| `chart-capital-structure` | `renderCapitalStructureChart` | Stacked 100%: Капитал / Нетек. пасиви / Тек. пасиви |
 | `chart-net-debt` | `renderNetDebtChart` | Bar+Line: Нетен дълг + D/E |
+| `chart-debt-composition` | `renderDebtCompositionChart` | Stacked bars: Банкови ST/LT + Лизинг ST/LT |
 | `chart-liquidity` | `renderLiquidityChart` | Lines: Current / Quick ratio |
 | `chart-dupont` | `renderDuPontChart` | Lines: ROE decomposition |
 | `chart-receivables` | `renderReceivablesChart` | Line: Дни вземания |
@@ -315,16 +351,20 @@ function csv(label, periodKey) {
 | `chart-dividends` | `renderDividendsChart` | Bars: Изплатени дивиденти |
 | `chart-dps` | `renderDividendPerShareChart` | Bars: Дивидент на акция |
 | `chart-payout` | `renderPayoutRatioChart` | Line: Payout ratio % |
+| `chart-dividend-growth` | `renderDividendGrowthChart` | Bars: Растеж на DPS г/г % |
 | `chart-eps-fcf` | `renderEPSvsFCFChart` | Bars: EPS vs FCF/акция |
 | `chart-bvps` | `renderBVPSChart` | Line: Book Value Per Share |
 
-**Таблици:**
+### Таблици
 
 | ID | Render функция | Съдържание |
 |----|---------------|------------|
 | `income-thead/tbody` | `renderIncomeTable` | Приходи, GP, EBIT, NP, маржове |
 | `balance-thead/tbody` | `renderBalanceTable` | Активи, Пари, Вземания, Капитал, Пасиви, D/E |
 | `cf-thead/tbody` | `renderCashFlowTable` | OCF, Invest.CF, Financ.CF, Net Change, FCF |
+| `cs-is-thead/tbody` | `renderCommonSizeISTable` | Common-size IS — всеки ред като % от приходите |
+| `cs-bs-thead/tbody` | `renderCommonSizeBSTable` | Common-size BS — всеки ред като % от общите активи |
+| `cagr-thead/tbody` | `renderCAGRTable` | 1Y / 3Y / 5Y CAGR за Revenue, EBIT, NP, EPS, DPS, BVPS (винаги от годишни данни, независимо от mode) |
 
 ---
 

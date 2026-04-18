@@ -82,6 +82,33 @@
       </div>
     </div>
 
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">ROA (възвращаемост на активи)</div>
+        <div class="kpi-value" id="kpi-roa">–</div>
+        <div class="kpi-sub">Нетна печалба / Активи</div>
+        <div class="kpi-period" id="kpi-roa-period"></div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">ROCE (възвращаемост на капитала)</div>
+        <div class="kpi-value" id="kpi-roce">–</div>
+        <div class="kpi-sub">EBIT / (Активи − Тек. пасиви)</div>
+        <div class="kpi-period" id="kpi-roce-period"></div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">FCF марж</div>
+        <div class="kpi-value" id="kpi-fcf-margin">–</div>
+        <div class="kpi-sub" id="kpi-fcf-margin-sub"></div>
+        <div class="kpi-period" id="kpi-fcf-margin-period"></div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Период на погасяване на дълга</div>
+        <div class="kpi-value" id="kpi-debt-payback">–</div>
+        <div class="kpi-sub" id="kpi-debt-payback-sub"></div>
+        <div class="kpi-period" id="kpi-debt-payback-period"></div>
+      </div>
+    </div>
+
     <!-- ── Company / Meta Info Bar ───────────────────────────────────── -->
     <div class="stock-info-bar" id="stock-info"></div>
 
@@ -105,12 +132,33 @@
         <div class="chart-desc">Годишен темп на растеж на приходи и нетна печалба спрямо същия период на предходната година.</div>
         <div class="chart-wrapper"><canvas id="chart-yoy-growth"></canvas></div>
       </div>
+      <div class="chart-card">
+        <div class="chart-title"><span class="dot" style="background:#0090D4"></span>Растежна траектория (база 100)</div>
+        <div class="chart-desc">Приходи, EBIT и нетна печалба, нормализирани към 100 в първия период. Разширяващи се маржове се виждат като по-стръмни линии за EBIT/NP.</div>
+        <div class="chart-wrapper"><canvas id="chart-growth-lines"></canvas></div>
+      </div>
     </div>
 
     <div class="chart-card full-width">
       <div class="chart-title"><span class="dot" style="background:var(--teal)"></span>Разбивка на приходите</div>
       <div class="chart-desc">Себестойност, разходи за продажби, административни разходи, брутна печалба.</div>
       <div class="chart-wrapper chart-wrapper--tall"><canvas id="chart-expense-breakdown"></canvas></div>
+    </div>
+
+    <!-- ── Рентабилност и ефективност ──────────────────────────────────── -->
+    <h2 class="section-title">Рентабилност и ефективност</h2>
+    <p class="section-desc">Колко ефективно компанията превръща активи и капитал в печалба.</p>
+    <div class="charts-grid">
+      <div class="chart-card">
+        <div class="chart-title"><span class="dot" style="background:var(--green)"></span>Възвращаемост (ROA, ROCE, ROIC)</div>
+        <div class="chart-desc">ROA = NP/Активи; ROCE = EBIT/(Активи−Тек. пасиви); ROIC = EBIT×(1−tax)/(Капитал+Дълг−Пари).</div>
+        <div class="chart-wrapper"><canvas id="chart-rentability"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title"><span class="dot" style="background:#8B5CF6"></span>Ефективна данъчна ставка</div>
+        <div class="chart-desc">Данъци / EBT. Високи стойности намаляват нетната печалба пропорционално.</div>
+        <div class="chart-wrapper"><canvas id="chart-tax-rate"></canvas></div>
+      </div>
     </div>
 
     <!-- ── Парични потоци ─────────────────────────────────────────────── -->
@@ -130,6 +178,19 @@
 
     <div class="charts-grid">
       <div class="chart-card">
+        <div class="chart-title"><span class="dot" style="background:var(--teal)"></span>CF ефективност (% от приходи)</div>
+        <div class="chart-desc">OCF/Приходи (cash conversion), FCF марж и CAPEX интензивност.</div>
+        <div class="chart-wrapper"><canvas id="chart-cf-efficiency"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title"><span class="dot" style="background:var(--red)"></span>Период за погасяване на дълга</div>
+        <div class="chart-desc">Общо дълг (банкови + лизинг) / годишен FCF. &lt;3 г. = зелено, 3–6 г. = жълто, &gt;6 г. = червено.</div>
+        <div class="chart-wrapper"><canvas id="chart-debt-payback"></canvas></div>
+      </div>
+    </div>
+
+    <div class="charts-grid">
+      <div class="chart-card">
         <div class="chart-title"><span class="dot" style="background:#8B5CF6"></span>Покритие на лихви</div>
         <div class="chart-desc">EBIT / Финансови разходи.</div>
         <div class="chart-wrapper"><canvas id="chart-interest-coverage"></canvas></div>
@@ -138,6 +199,14 @@
         <div class="chart-title"><span class="dot" style="background:#EC4899"></span>Качество на печалбата</div>
         <div class="chart-desc">OCF / Нетна печалба.</div>
         <div class="chart-wrapper"><canvas id="chart-earnings-quality"></canvas></div>
+      </div>
+    </div>
+
+    <div class="charts-grid">
+      <div class="chart-card">
+        <div class="chart-title"><span class="dot" style="background:var(--amber)"></span>Accruals ratio</div>
+        <div class="chart-desc">(Нетна печалба − OCF) / средни активи. По-ниските стойности означават по-качествена печалба. Високи положителни стойности = red flag за агресивно счетоводство.</div>
+        <div class="chart-wrapper"><canvas id="chart-accruals"></canvas></div>
       </div>
     </div>
 
@@ -158,9 +227,27 @@
 
     <div class="charts-grid">
       <div class="chart-card">
+        <div class="chart-title"><span class="dot" style="background:var(--teal)"></span>Състав на активите (%)</div>
+        <div class="chart-desc">Разпределение на активите по тип: пари, вземания, запаси, други текущи, нетекущи.</div>
+        <div class="chart-wrapper"><canvas id="chart-asset-composition"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title"><span class="dot" style="background:var(--green)"></span>Капиталова структура (%)</div>
+        <div class="chart-desc">Финансиране на активите: собствен капитал vs текущи/нетекущи пасиви.</div>
+        <div class="chart-wrapper"><canvas id="chart-capital-structure"></canvas></div>
+      </div>
+    </div>
+
+    <div class="charts-grid">
+      <div class="chart-card">
         <div class="chart-title"><span class="dot" style="background:var(--red)"></span>Нетен дълг и D/E</div>
         <div class="chart-desc">Нетен дълг = банкови заеми + лизинги - пари.</div>
         <div class="chart-wrapper"><canvas id="chart-net-debt"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title"><span class="dot" style="background:var(--navy)"></span>Състав на дълга</div>
+        <div class="chart-desc">Разпределение на дълга: банкови заеми (ST/LT) и лизинги (ST/LT).</div>
+        <div class="chart-wrapper"><canvas id="chart-debt-composition"></canvas></div>
       </div>
     </div>
 
@@ -222,6 +309,11 @@
         <div class="chart-desc">Дивиденти / Нетна печалба.</div>
         <div class="chart-wrapper"><canvas id="chart-payout"></canvas></div>
       </div>
+      <div class="chart-card">
+        <div class="chart-title"><span class="dot" style="background:var(--teal)"></span>Растеж на дивидента на акция (г/г %)</div>
+        <div class="chart-desc">Годишна промяна на DPS — индикатор за устойчива дивидентна политика.</div>
+        <div class="chart-wrapper"><canvas id="chart-dividend-growth"></canvas></div>
+      </div>
     </div>
 
     <!-- ── Per Share ──────────────────────────────────────────────────── -->
@@ -269,6 +361,42 @@
           <table id="table-cf">
             <thead><tr id="cf-thead"></tr></thead>
             <tbody id="cf-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="tables-grid">
+      <div class="table-card full-width">
+        <div class="table-header"><span class="dot" style="background:var(--teal)"></span>Common-size отчет за доходите (% от Приходи)</div>
+        <div class="table-wrapper">
+          <table id="table-cs-is">
+            <thead><tr id="cs-is-thead"></tr></thead>
+            <tbody id="cs-is-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="tables-grid">
+      <div class="table-card full-width">
+        <div class="table-header"><span class="dot" style="background:var(--navy)"></span>Common-size баланс (% от ОБЩО АКТИВИ)</div>
+        <div class="table-wrapper">
+          <table id="table-cs-bs">
+            <thead><tr id="cs-bs-thead"></tr></thead>
+            <tbody id="cs-bs-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="tables-grid">
+      <div class="table-card full-width">
+        <div class="table-header"><span class="dot" style="background:var(--amber)"></span>CAGR — сложен годишен темп на растеж</div>
+        <div class="table-wrapper">
+          <table id="table-cagr">
+            <thead><tr id="cagr-thead"></tr></thead>
+            <tbody id="cagr-tbody"></tbody>
           </table>
         </div>
       </div>

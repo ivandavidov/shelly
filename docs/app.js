@@ -344,6 +344,7 @@ function isPoint(year, q, label) {
     cf_fin:      cfFin,
     cf_fcf:      cfOp != null && capex != null ? cfOp + capex : null,
     cf_net:      cfNet,
+    capex:       capex,
     eps:         toEUR_eps(qBS(ROW.eps, year, q), year),  // EPS is already period-specific in CSV
     sourceYear:  year,
     quarter:     q,
@@ -402,6 +403,7 @@ function buildAnnualData() {
         cf_fin: cfFin,
         cf_fcf: cfOp != null && capex != null ? cfOp + capex : null,
         cf_net: cfNet,
+        capex:  capex,
         eps:    aEPS(yr),
         sourceYear: yr,
         shareCount: sharesForYear(yr),
@@ -450,6 +452,7 @@ function buildLTMData() {
       finExp:   Math.abs(aE(ROW.fin_exp, yr) ?? 0) || null,
       tax:      Math.abs(aE(ROW.tax,     yr) ?? 0) || null,
       cf_op: cfOp, cf_inv: cfInv, cf_fin: cfFin, cf_fcf: cfOp != null && capex != null ? cfOp + capex : null, cf_net: cfNet,
+      capex,
       eps: aEPS(yr), sourceYear: yr, shareCount: sharesForYear(yr),
     };
   });
@@ -494,6 +497,7 @@ function buildLTMData() {
       cf_fin: cfFin,
       cf_fcf: cfOp != null && cfCap != null ? cfOp + cfCap : null,
       cf_net: sumQ('cf_net'),
+      capex: cfCap,
       eps: (() => { const vals = w4.map(q => q.eps); return vals.every(v => v != null) ? vals.reduce((a,b)=>a+b,0) : null; })(),
       sourceYear: last.sourceYear, quarter: last.quarter, shareCount: last.shareCount,
     });
@@ -628,6 +632,51 @@ function updateKPIs(series) {
     document.getElementById('kpi-eps').textContent = epsFromSeries != null ? fmtPerShare(epsFromSeries) : '–';
     document.getElementById('kpi-eps-yoy').innerHTML = '';
     document.getElementById('kpi-eps-period').textContent = last?.label || '';
+  }
+}
+
+// ── Secondary KPIs: ROA, ROCE, FCF margin, Debt payback ──────────────────────
+function updateRatioKPIs(series, bsData) {
+  const i = series.length - 1;
+  const s = series[i], b = bsData[i];
+  const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+  const setPeriod = id => set(id, s?.label || '');
+
+  // ROA = NP / Assets
+  const roa = (s?.net_profit != null && b?.assets) ? (s.net_profit / b.assets) * 100 : null;
+  set('kpi-roa', roa != null ? fmtPct(roa) : '–');
+  setPeriod('kpi-roa-period');
+
+  // ROCE = EBIT / (Assets − Current Liabilities)
+  let roce = null;
+  if (s?.ebit != null && b?.assets && b?.current_liabilities != null) {
+    const denom = b.assets - b.current_liabilities;
+    if (denom > 0) roce = (s.ebit / denom) * 100;
+  }
+  set('kpi-roce', roce != null ? fmtPct(roce) : '–');
+  setPeriod('kpi-roce-period');
+
+  // FCF margin
+  const fcfM = (s?.cf_fcf != null && s?.revenue > 0) ? (s.cf_fcf / s.revenue) * 100 : null;
+  set('kpi-fcf-margin', fcfM != null ? fmtPct(fcfM) : '–');
+  setPeriod('kpi-fcf-margin-period');
+  const fcfSub = document.getElementById('kpi-fcf-margin-sub');
+  if (fcfSub) fcfSub.innerHTML = s?.cf_fcf != null ? `<span class="${s.cf_fcf >= 0 ? 'positive' : 'negative'}">FCF: ${fmtAmountCompact(s.cf_fcf)}</span>` : '';
+
+  // Debt payback (години) — annualized
+  const annualFactor = currentMode === 'quarterly' ? 4 : 1;
+  let payback = null;
+  if (b && s?.cf_fcf != null && s.cf_fcf > 0) {
+    const totalDebt = (b.bank_loans || 0) + (b.lease_st || 0) + (b.lease_lt || 0);
+    const annualFCF = s.cf_fcf * annualFactor;
+    if (annualFCF > 0) payback = totalDebt / annualFCF;
+  }
+  set('kpi-debt-payback', payback != null ? payback.toFixed(1) + ' г.' : '–');
+  setPeriod('kpi-debt-payback-period');
+  const paybackSub = document.getElementById('kpi-debt-payback-sub');
+  if (paybackSub) {
+    if (payback == null) paybackSub.innerHTML = '<span class="neutral">отрицателен/нулев FCF</span>';
+    else paybackSub.innerHTML = `<span class="${payback <= 3 ? 'positive' : payback <= 6 ? 'neutral' : 'negative'}">Дълг / годишен FCF</span>`;
   }
 }
 
@@ -873,15 +922,59 @@ function renderWorkingCapitalChart(series, bsData) {
   const recD = series.map((s,i) => (bsData[i]?.recv && s.revenue && Math.abs(s.revenue) > 0.01) ? (bsData[i].recv / Math.abs(s.revenue)) * df : null);
   const payD = series.map((s,i) => (bsData[i]?.trade_payables && s.cogs && Math.abs(s.cogs) > 0.01) ? (bsData[i].trade_payables / Math.abs(s.cogs)) * df : null);
   const ccc  = series.map((s,i) => (invD[i] != null && recD[i] != null && payD[i] != null) ? invD[i]+recD[i]-payD[i] : null);
+  
   const opts = cloneOpts();
-  opts.plugins.tooltip.callbacks = { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(0)} дни` };
-  opts.scales.y.ticks.callback = v => v.toFixed(0)+' дни';
-  mkChart('chart-working-capital', { type: 'line', data: { labels: series.map(s=>s.label), datasets: [
-    { label: 'Дни запаси', data: invD, borderColor: C.amber, backgroundColor: C.amberA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false },
-    { label: 'Дни вземания', data: recD, borderColor: C.blue, backgroundColor: C.blueA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false },
-    { label: 'Дни задължения', data: payD, borderColor: C.red, backgroundColor: C.redA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false },
-    { label: 'CCC (дни)', data: ccc, borderColor: C.navy, backgroundColor: C.navyA, tension: 0.3, pointRadius: 4, borderWidth: 2.5, fill: false, borderDash: [5,3] }
-  ]}, options: opts });
+  opts.plugins.tooltip.callbacks = { 
+    label: ctx => ` ${ctx.dataset.label}: ${Math.abs(ctx.parsed.y).toFixed(0)} дни` 
+  };
+  opts.scales.x = { stacked: true, grid: { display: false }, ticks: { font: { size: 10 } } };
+  opts.scales.y = { stacked: true, grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => Math.abs(v).toFixed(0) + ' дни' } };
+  
+  mkChart('chart-working-capital', { 
+    type: 'bar', 
+    data: { 
+      labels: series.map(s => s.label), 
+      datasets: [
+        { 
+          label: 'Дни запаси', 
+          data: invD, 
+          backgroundColor: C.amberA, 
+          borderColor: C.amber, 
+          borderWidth: 1,
+          stack: 'wc'
+        },
+        { 
+          label: 'Дни вземания', 
+          data: recD, 
+          backgroundColor: C.blueA, 
+          borderColor: C.blue, 
+          borderWidth: 1,
+          stack: 'wc'
+        },
+        { 
+          label: 'Дни задължения', 
+          data: payD.map(v => v ? -v : null), 
+          backgroundColor: C.redA, 
+          borderColor: C.red, 
+          borderWidth: 1,
+          stack: 'wc'
+        },
+        { 
+          label: 'CCC (цикъл)', 
+          data: ccc, 
+          type: 'line',
+          borderColor: C.navy, 
+          backgroundColor: C.navy, 
+          tension: 0.3, 
+          pointRadius: 4, 
+          borderWidth: 2.5, 
+          fill: false,
+          order: -1 // Show on top
+        }
+      ] 
+    }, 
+    options: opts 
+  });
 }
 
 function renderDividendsChart() {
@@ -995,6 +1088,222 @@ function renderBVPSChart(series) {
   opts.scales.y.ticks.callback = v => fmtPerShare(v, 1);
   mkChart('chart-bvps', { type: 'line', data: { labels, datasets: [{
     label: `BVPS (${DISPLAY_PER_SHARE_UNIT})`, data: values, borderColor: C.navy, backgroundColor: C.navyA, tension: 0.3, pointRadius: 4, borderWidth: 2, fill: true
+  }]}, options: opts });
+}
+
+// ── Rentability: ROA / ROCE / ROIC ────────────────────────────────────────────
+// Computed ratios per period. For quarterly mode the values are quarterly
+// (not annualized) — same convention as DuPont ROE above.
+function effTaxRate(s) {
+  if (s.tax == null || s.net_profit == null) return null;
+  const ebt = s.net_profit + s.tax;
+  return ebt > 0 ? s.tax / ebt : null;
+}
+function renderRentabilityChart(series, bsData) {
+  const roa = series.map((s, i) => (s.net_profit != null && bsData[i]?.assets) ? (s.net_profit / bsData[i].assets) * 100 : null);
+  const roce = series.map((s, i) => {
+    const b = bsData[i];
+    if (!b || s.ebit == null || !b.assets || b.current_liabilities == null) return null;
+    const denom = b.assets - b.current_liabilities;
+    return denom > 0 ? (s.ebit / denom) * 100 : null;
+  });
+  const roic = series.map((s, i) => {
+    const b = bsData[i];
+    if (!b || s.ebit == null) return null;
+    const taxRate = effTaxRate(s) ?? 0;
+    const totalDebt = (b.bank_loans || 0) + (b.lease_st || 0) + (b.lease_lt || 0);
+    const invCap = (b.equity || 0) + totalDebt - (b.cash || 0);
+    return invCap > 0 ? ((s.ebit * (1 - taxRate)) / invCap) * 100 : null;
+  });
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(1)}%` };
+  opts.scales.y.ticks.callback = v => v.toFixed(0) + '%';
+  mkChart('chart-rentability', { type: 'line', data: { labels: series.map(s => s.label), datasets: [
+    { label: 'ROA %', data: roa, borderColor: C.blue, backgroundColor: C.blueA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false },
+    { label: 'ROCE %', data: roce, borderColor: C.amber, backgroundColor: C.amberA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false },
+    { label: 'ROIC %', data: roic, borderColor: C.green, backgroundColor: C.greenA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false }
+  ]}, options: opts });
+}
+
+// ── Effective tax rate ────────────────────────────────────────────────────────
+function renderTaxRateChart(series) {
+  const rate = series.map(s => { const r = effTaxRate(s); return r != null ? r * 100 : null; });
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => ` Ефективна ставка: ${ctx.parsed.y?.toFixed(1)}%` };
+  opts.scales.y.ticks.callback = v => v.toFixed(0) + '%';
+  opts.scales.y.beginAtZero = true;
+  mkChart('chart-tax-rate', { type: 'bar', data: { labels: series.map(s => s.label), datasets: [{
+    label: 'Ефективна данъчна ставка %', data: rate,
+    backgroundColor: C.purpleA, borderColor: C.purple, borderWidth: 1.5, borderRadius: 4
+  }]}, options: opts });
+}
+
+// ── Cash flow efficiency: FCF margin, OCF margin, CAPEX intensity ────────────
+function renderCFEfficiencyChart(series) {
+  const pct = (num, den) => (num != null && den && den > 0) ? (num / den) * 100 : null;
+  const ocfM = series.map(s => pct(s.cf_op, s.revenue));
+  const fcfM = series.map(s => pct(s.cf_fcf, s.revenue));
+  const capexI = series.map(s => (s.capex != null && s.revenue > 0) ? (Math.abs(s.capex) / s.revenue) * 100 : null);
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(1)}%` };
+  opts.scales.y.ticks.callback = v => v.toFixed(0) + '%';
+  mkChart('chart-cf-efficiency', { type: 'line', data: { labels: series.map(s => s.label), datasets: [
+    { label: 'OCF / Приходи', data: ocfM, borderColor: C.blue, backgroundColor: C.blueA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false },
+    { label: 'FCF / Приходи', data: fcfM, borderColor: C.green, backgroundColor: C.greenA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false },
+    { label: 'CAPEX / Приходи', data: capexI, borderColor: C.red, backgroundColor: C.redA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false }
+  ]}, options: opts });
+}
+
+// ── Debt payback period: total debt / annualized FCF (в години) ─────────────
+function renderDebtPaybackChart(series, bsData) {
+  const annualFactor = currentMode === 'quarterly' ? 4 : 1;
+  const payback = series.map((s, i) => {
+    const b = bsData[i];
+    if (!b || s.cf_fcf == null || s.cf_fcf <= 0) return null;
+    const totalDebt = (b.bank_loans || 0) + (b.lease_st || 0) + (b.lease_lt || 0);
+    const annualFCF = s.cf_fcf * annualFactor;
+    return annualFCF > 0 ? totalDebt / annualFCF : null;
+  });
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => ctx.parsed.y != null ? ` ${ctx.parsed.y.toFixed(1)} г.` : ' – (отрицателен/нулев FCF)' };
+  opts.scales.y.ticks.callback = v => v.toFixed(1) + ' г.';
+  opts.scales.y.beginAtZero = true;
+  mkChart('chart-debt-payback', { type: 'bar', data: { labels: series.map(s => s.label), datasets: [{
+    label: 'Години за погасяване (Дълг / FCF)', data: payback,
+    backgroundColor: payback.map(v => v == null ? C.grayA : v <= 3 ? C.greenA : v <= 6 ? C.amberA : C.redA),
+    borderColor:     payback.map(v => v == null ? C.gray  : v <= 3 ? C.green  : v <= 6 ? C.amber  : C.red),
+    borderWidth: 1.5, borderRadius: 4
+  }]}, options: opts });
+}
+
+// ── Accruals ratio: (NP − OCF) / avg Assets ──────────────────────────────────
+function renderAccrualsChart(series, bsData) {
+  const acc = series.map((s, i) => {
+    if (s.net_profit == null || s.cf_op == null) return null;
+    const b = bsData[i], bPrev = i > 0 ? bsData[i - 1] : null;
+    const avgAssets = (bPrev?.assets != null && b?.assets != null) ? (b.assets + bPrev.assets) / 2 : b?.assets;
+    if (!avgAssets) return null;
+    return ((s.net_profit - s.cf_op) / avgAssets) * 100;
+  });
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => ` Accruals: ${ctx.parsed.y?.toFixed(1)}%` };
+  opts.scales.y.ticks.callback = v => v.toFixed(0) + '%';
+  mkChart('chart-accruals', { type: 'bar', data: { labels: series.map(s => s.label), datasets: [{
+    label: 'Accruals ratio % (по-ниско = по-качествена печалба)', data: acc,
+    backgroundColor: acc.map(v => v == null ? C.grayA : Math.abs(v) <= 5 ? C.greenA : Math.abs(v) <= 10 ? C.amberA : C.redA),
+    borderColor:     acc.map(v => v == null ? C.gray  : Math.abs(v) <= 5 ? C.green  : Math.abs(v) <= 10 ? C.amber  : C.red),
+    borderWidth: 1.5, borderRadius: 4
+  }]}, options: opts });
+}
+
+// ── Asset composition (stacked 100%) ──────────────────────────────────────────
+function renderAssetCompositionChart(bsData) {
+  const pct = (v, total) => (v != null && total) ? (v / total) * 100 : null;
+  const cash = bsData.map(b => pct(b.cash, b.assets));
+  const recv = bsData.map(b => pct(b.recv, b.assets));
+  const inv  = bsData.map(b => pct(b.inventories, b.assets));
+  const otherCA = bsData.map(b => {
+    if (!b.assets || b.current_assets == null) return null;
+    const other = (b.current_assets || 0) - (b.cash || 0) - (b.recv || 0) - (b.inventories || 0);
+    return (other / b.assets) * 100;
+  });
+  const nca = bsData.map(b => (b.assets) ? ((b.assets - (b.current_assets || 0)) / b.assets) * 100 : null);
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(1)}%` };
+  opts.scales.x = { stacked: true, grid: { display: false }, ticks: { font: { size: 10 } } };
+  opts.scales.y = { stacked: true, grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => v.toFixed(0) + '%' }, max: 100 };
+  mkChart('chart-asset-composition', { type: 'bar', data: { labels: bsData.map(b => b.label), datasets: [
+    { label: 'Пари', data: cash, backgroundColor: C.teal, stack: 'ac' },
+    { label: 'Вземания', data: recv, backgroundColor: C.blue, stack: 'ac' },
+    { label: 'Запаси', data: inv, backgroundColor: C.amber, stack: 'ac' },
+    { label: 'Други текущи', data: otherCA, backgroundColor: C.gray, stack: 'ac' },
+    { label: 'Нетекущи активи', data: nca, backgroundColor: C.navy, stack: 'ac' }
+  ]}, options: opts });
+}
+
+// ── Debt composition (absolute stacked bars) ─────────────────────────────────
+function renderDebtCompositionChart(bsData) {
+  const bankST = bsData.map(b => b.bank_loans_st || 0);
+  const bankLT = bsData.map(b => Math.max(0, (b.bank_loans || 0) - (b.bank_loans_st || 0)));
+  const leaseST = bsData.map(b => b.lease_st || 0);
+  const leaseLT = bsData.map(b => b.lease_lt || 0);
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = {
+    label: ctx => ` ${ctx.dataset.label}: ${fmtAmountTooltip(ctx.parsed.y)}`,
+    footer: items => `Общо дълг: ${fmtAmountTooltip(items.reduce((a,i)=>a+(i.parsed.y||0),0))}`
+  };
+  opts.scales.x = { stacked: true, grid: { display: false }, ticks: { font: { size: 10 } } };
+  opts.scales.y = { stacked: true, grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => fmtBGN(v) } };
+  mkChart('chart-debt-composition', { type: 'bar', data: { labels: bsData.map(b => b.label), datasets: [
+    { label: 'Банкови заеми — краткосрочни', data: bankST, backgroundColor: C.red, stack: 'dc' },
+    { label: 'Банкови заеми — дългосрочни', data: bankLT, backgroundColor: C.navy, stack: 'dc' },
+    { label: 'Лизинг — краткосрочни', data: leaseST, backgroundColor: C.amber, stack: 'dc' },
+    { label: 'Лизинг — дългосрочни', data: leaseLT, backgroundColor: C.purple, stack: 'dc' }
+  ]}, options: opts });
+}
+
+// ── Capital structure (stacked 100%) ─────────────────────────────────────────
+function renderCapitalStructureChart(bsData) {
+  const pct = (v, total) => (v != null && total) ? (v / total) * 100 : null;
+  const equity = bsData.map(b => pct(b.equity, b.assets));
+  const curr = bsData.map(b => pct(b.current_liabilities, b.assets));
+  const nc = bsData.map(b => {
+    if (!b.assets) return null;
+    const ncl = (b.liabilities || 0) - (b.current_liabilities || 0);
+    return (ncl / b.assets) * 100;
+  });
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(1)}%` };
+  opts.scales.x = { stacked: true, grid: { display: false }, ticks: { font: { size: 10 } } };
+  opts.scales.y = { stacked: true, grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 }, callback: v => v.toFixed(0) + '%' }, max: 100 };
+  mkChart('chart-capital-structure', { type: 'bar', data: { labels: bsData.map(b => b.label), datasets: [
+    { label: 'Собствен капитал', data: equity, backgroundColor: C.green, stack: 'cs' },
+    { label: 'Нетекущи пасиви', data: nc, backgroundColor: C.amber, stack: 'cs' },
+    { label: 'Текущи пасиви', data: curr, backgroundColor: C.red, stack: 'cs' }
+  ]}, options: opts });
+}
+
+// ── Revenue / EBIT / Net Profit (normalized, base = 100) ─────────────────────
+function renderGrowthLinesChart(series) {
+  const normalize = (key) => {
+    let base = null;
+    for (const s of series) { if (s[key] != null && s[key] > 0) { base = s[key]; break; } }
+    if (base == null) return series.map(_ => null);
+    return series.map(s => s[key] != null ? (s[key] / base) * 100 : null);
+  };
+  const rev  = normalize('revenue');
+  const ebit = normalize('ebit');
+  const np   = normalize('net_profit');
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(0)}` };
+  opts.scales.y.ticks.callback = v => v.toFixed(0);
+  mkChart('chart-growth-lines', { type: 'line', data: { labels: series.map(s => s.label), datasets: [
+    { label: 'Приходи', data: rev,  borderColor: C.blue,  backgroundColor: C.blueA,  tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false },
+    { label: 'EBIT',    data: ebit, borderColor: C.amber, backgroundColor: C.amberA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false },
+    { label: 'Нетна печалба', data: np, borderColor: C.green, backgroundColor: C.greenA, tension: 0.3, pointRadius: 3, borderWidth: 2, fill: false }
+  ]}, options: opts });
+}
+
+// ── Dividend growth (DPS YoY) ────────────────────────────────────────────────
+function renderDividendGrowthChart() {
+  const divYears = allYears.filter(yr => {
+    const v = ytdRaw(ROW.dividends, yr, 4);
+    return v != null && v !== 0;
+  });
+  const dps = divYears.map(yr => {
+    const div = toEUR(Math.abs(ytdRaw(ROW.dividends, yr, 4) || 0), yr);
+    const shares = sharesForYear(yr);
+    return (div > 0 && shares > 0) ? (div * 1000) / shares : 0;
+  });
+  const growth = dps.map((v, i) => (i === 0 || dps[i-1] <= 0) ? null : (v - dps[i-1]) / dps[i-1] * 100);
+  const opts = cloneOpts();
+  opts.plugins.tooltip.callbacks = { label: ctx => ctx.parsed.y != null ? ` DPS г/г: ${ctx.parsed.y >= 0 ? '+' : ''}${ctx.parsed.y.toFixed(1)}%` : '' };
+  opts.scales.y.ticks.callback = v => v.toFixed(0) + '%';
+  mkChart('chart-dividend-growth', { type: 'bar', data: { labels: divYears, datasets: [{
+    label: 'DPS г/г %', data: growth,
+    backgroundColor: growth.map(v => v == null ? C.grayA : v >= 0 ? C.greenA : C.redA),
+    borderColor:     growth.map(v => v == null ? C.gray  : v >= 0 ? C.green  : C.red),
+    borderWidth: 1.5, borderRadius: 4
   }]}, options: opts });
 }
 
@@ -1118,6 +1427,129 @@ function renderCashFlowTable(series) {
   }).join('');
 }
 
+// ── Common-size IS (всеки ред като % от Приходи) ─────────────────────────────
+function renderCommonSizeISTable(series) {
+  const rev = [...series].reverse();
+  document.getElementById('cs-is-thead').innerHTML =
+    '<th>Показател (% от Приходи)</th>' + rev.map(s => `<th>${s.label}</th>`).join('');
+  const negKeys = new Set(['cogs','sellExp','adminExp','otherExp','finExp','tax']);
+  const rows = [
+    { key: 'revenue',      label: 'Приходи', bold: true },
+    { key: 'cogs',         label: 'Себестойност' },
+    { key: 'gross_profit', label: 'Брутна печалба', bold: true },
+    { key: 'sellExp',      label: 'Разходи за продажби' },
+    { key: 'adminExp',     label: 'Админ. разходи' },
+    { key: 'otherExp',     label: 'Други разходи' },
+    { key: 'ebit',         label: 'EBIT', bold: true },
+    { key: 'finExp',       label: 'Финансови разходи' },
+    { key: 'tax',          label: 'Данъци' },
+    { key: 'net_profit',   label: 'Нетна печалба', bold: true },
+  ];
+  document.getElementById('cs-is-tbody').innerHTML = rows.map(row => {
+    const cells = rev.map(s => {
+      if (!s.revenue || s[row.key] == null) return '<td>–</td>';
+      let v = (Math.abs(s[row.key]) / s.revenue) * 100;
+      if (negKeys.has(row.key)) v = -v;
+      const cls = v < 0 ? 'negative' : '';
+      return `<td class="${cls}">${v.toFixed(1)}%</td>`;
+    }).join('');
+    const lbl = row.bold ? `<td><strong>${row.label}</strong></td>` : `<td>${row.label}</td>`;
+    return `<tr>${lbl}${cells}</tr>`;
+  }).join('');
+}
+
+// ── Common-size BS (всеки ред като % от ОБЩО АКТИВИ) ─────────────────────────
+function renderCommonSizeBSTable(bsData) {
+  const rev = [...bsData].reverse();
+  document.getElementById('cs-bs-thead').innerHTML =
+    '<th>Показател (% от Активи)</th>' + rev.map(b => `<th>${b.label}</th>`).join('');
+  const rows = [
+    { label: 'ОБЩО АКТИВИ', fn: () => null, fixed: 100, bold: true },
+    { label: 'Пари', fn: b => b.cash },
+    { label: 'Вземания', fn: b => b.recv },
+    { label: 'Запаси', fn: b => b.inventories },
+    { label: 'Общо текущи активи', fn: b => b.current_assets, sep: true },
+    { label: 'Нетекущи активи', fn: b => (b.assets != null && b.current_assets != null) ? b.assets - b.current_assets : null },
+    { label: 'Търговски задължения', fn: b => b.trade_payables, sep: true },
+    { label: 'Банкови заеми (общо)', fn: b => b.bank_loans },
+    { label: 'Лизинг (общо)', fn: b => (b.lease_st || 0) + (b.lease_lt || 0) },
+    { label: 'Общо текущи пасиви', fn: b => b.current_liabilities },
+    { label: 'Общо пасиви', fn: b => b.liabilities, bold: true },
+    { label: 'Собствен капитал', fn: b => b.equity, bold: true },
+  ];
+  document.getElementById('cs-bs-tbody').innerHTML = rows.map(row => {
+    const cls = row.sep ? 'separator' : '';
+    const cells = rev.map(b => {
+      if (!b.assets) return '<td>–</td>';
+      if (row.fixed != null) return `<td>${row.fixed.toFixed(1)}%</td>`;
+      const raw = row.fn(b);
+      if (raw == null) return '<td>–</td>';
+      return `<td>${((raw / b.assets) * 100).toFixed(1)}%</td>`;
+    }).join('');
+    const lbl = row.bold ? `<td><strong>${row.label}</strong></td>` : `<td>${row.label}</td>`;
+    return `<tr class="${cls}">${lbl}${cells}</tr>`;
+  }).join('');
+}
+
+// ── CAGR таблица (винаги от годишни данни) ───────────────────────────────────
+function renderCAGRTable() {
+  const yearsWithQ4 = allYears.filter(yr => ytdRaw(ROW.revenue, yr, 4) != null);
+  if (yearsWithQ4.length < 2) {
+    document.getElementById('cagr-thead').innerHTML = '<th>Показател</th><th>CAGR</th>';
+    document.getElementById('cagr-tbody').innerHTML = '<tr><td colspan="2">Недостатъчно годишни данни</td></tr>';
+    return;
+  }
+  const annual = {
+    revenue:    yearsWithQ4.map(yr => aE(ROW.revenue, yr)),
+    ebit:       yearsWithQ4.map(yr => aE(ROW.ebit, yr)),
+    net_profit: yearsWithQ4.map(yr => aE(ROW.net_profit, yr)),
+    eps:        yearsWithQ4.map(yr => aEPS(yr)),
+    dps:        yearsWithQ4.map(yr => {
+      const div = toEUR(Math.abs(ytdRaw(ROW.dividends, yr, 4) || 0), yr);
+      const shares = sharesForYear(yr);
+      return (div > 0 && shares > 0) ? (div * 1000) / shares : null;
+    }),
+    bvps:       yearsWithQ4.map(yr => {
+      const eq = toEUR(ytdRaw(ROW.equity, yr, 4), yr);
+      const shares = sharesForYear(yr);
+      return (eq != null && shares > 0) ? (eq * 1000) / shares : null;
+    }),
+  };
+
+  const cagrN = (arr, n) => {
+    if (arr.length <= n) return null;
+    const end = arr[arr.length - 1];
+    const start = arr[arr.length - 1 - n];
+    if (end == null || start == null || start <= 0) return null;
+    return (Math.pow(end / start, 1 / n) - 1) * 100;
+  };
+
+  const lastYr = yearsWithQ4[yearsWithQ4.length - 1];
+  const periodHdr = n => yearsWithQ4.length > n
+    ? `${yearsWithQ4[yearsWithQ4.length - 1 - n]}→${lastYr}`
+    : '–';
+  document.getElementById('cagr-thead').innerHTML =
+    `<th>Показател</th><th>1Y (${periodHdr(1)})</th><th>3Y CAGR (${periodHdr(3)})</th><th>5Y CAGR (${periodHdr(5)})</th>`;
+
+  const rows = [
+    { key: 'revenue',    label: 'Приходи' },
+    { key: 'ebit',       label: 'EBIT' },
+    { key: 'net_profit', label: 'Нетна печалба' },
+    { key: 'eps',        label: 'EPS' },
+    { key: 'dps',        label: 'Дивидент/акция (DPS)' },
+    { key: 'bvps',       label: 'Счетоводна ст./акция (BVPS)' },
+  ];
+  const fmtCAGR = v => {
+    if (v == null) return '<td>–</td>';
+    const cls = v >= 0 ? 'positive' : 'negative';
+    return `<td class="${cls}">${v >= 0 ? '+' : ''}${v.toFixed(1)}%</td>`;
+  };
+  document.getElementById('cagr-tbody').innerHTML = rows.map(row => {
+    const arr = annual[row.key];
+    return `<tr><td>${row.label}</td>${fmtCAGR(cagrN(arr, 1))}${fmtCAGR(cagrN(arr, 3))}${fmtCAGR(cagrN(arr, 5))}</tr>`;
+  }).join('');
+}
+
 function renderStockInfo(series) {
   let unit = 'тримесечия';
   if (currentMode === 'annual') unit = 'години';
@@ -1190,17 +1622,27 @@ function refresh() {
   const series = buildSeriesData();
   const bsData = buildBalanceData();
   updateKPIs(series);
+  updateRatioKPIs(series, bsData);
   renderRevenueChart(series);
   renderMarginsChart(series);
+  renderGrowthLinesChart(series);
   renderYoYGrowthChart(series);
   renderExpenseBreakdownChart(series);
+  renderRentabilityChart(series, bsData);
+  renderTaxRateChart(series);
   renderCashflowChart(series);
   renderFCFChart(series);
+  renderCFEfficiencyChart(series);
   renderInterestCoverageChart(series);
   renderEarningsQualityChart(series);
+  renderAccrualsChart(series, bsData);
+  renderDebtPaybackChart(series, bsData);
   renderBalanceChart(bsData);
+  renderAssetCompositionChart(bsData);
+  renderCapitalStructureChart(bsData);
   renderAssetGrowthChart(bsData);
   renderNetDebtChart(bsData);
+  renderDebtCompositionChart(bsData);
   renderLiquidityChart(bsData);
   renderDuPontChart(series, bsData);
   renderReceivablesChart(series, bsData);
@@ -1210,10 +1652,14 @@ function refresh() {
   renderBVPSChart(series);
   renderDividendsChart();
   renderDividendPerShareChart();
+  renderDividendGrowthChart();
   renderPayoutRatioChart();
   renderIncomeTable(series);
+  renderCommonSizeISTable(series);
   renderBalanceTable(bsData);
+  renderCommonSizeBSTable(bsData);
   renderCashFlowTable(series);
+  renderCAGRTable();
   renderStockInfo(series);
   document.getElementById('year-filters').style.display =
     currentMode === 'quarterly' ? 'flex' : 'none';
