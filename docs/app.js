@@ -585,22 +585,60 @@ function mkChart(id, config) {
 }
 
 // ── KPI ───────────────────────────────────────────────────────────────────────
+/** Standalone quarterly point (IS/CF) with quarterly EPS; null if no data */
+function qPoint(year, q) {
+  if (ytdRaw(ROW.revenue, year, q) == null) return null;
+  const pt = isPoint(year, q, '');
+  pt.eps = qEPS(year, q);
+  return pt;
+}
+
+/** Sum of the 4 standalone quarters ending at year/q; null if any is missing */
+function ltmPoint(year, q) {
+  const pts = [];
+  let y = +year, qq = q;
+  for (let i = 0; i < 4; i++) {
+    const pt = qPoint(String(y), qq);
+    if (!pt) return null;
+    pts.push(pt);
+    if (--qq === 0) { qq = 4; y--; }
+  }
+  const sum = key => pts.some(p => p[key] == null) ? null : pts.reduce((a, p) => a + p[key], 0);
+  return { revenue: sum('revenue'), net_profit: sum('net_profit'), eps: sum('eps') };
+}
+
+/** Same period one year earlier than `last` (true YoY base, not the previous bar) */
+function yoyBase(last, series) {
+  if (!last) return null;
+  const prevYear = String(+last.sourceYear - 1);
+  // Quarterly: same quarter of the previous year (independent of active year filters)
+  if (currentMode === 'quarterly') return qPoint(prevYear, last.quarter);
+  // LTM bar: LTM ending at the same quarter of the previous year
+  if (currentMode === 'ltm' && last.quarter != null) return ltmPoint(prevYear, last.quarter);
+  // Annual bars (annual mode, or LTM mode without an LTM bar): previous fiscal year
+  return series.find(s => String(s.label) === prevYear) || null;
+}
+
+function setYoY(id, curr, base) {
+  const el = document.getElementById(id);
+  if (curr != null && base) {
+    const ch = (curr - base) / Math.abs(base) * 100;
+    el.innerHTML = yoySpan(ch) + ' г/г';
+  } else {
+    el.innerHTML = '';
+  }
+}
+
 function updateKPIs(series) {
   const last = series[series.length - 1];
-  const prev = series.length >= 2 ? series[series.length - 2] : null;
+  const base = yoyBase(last, series);
 
   document.getElementById('kpi-revenue').textContent = fmtAmountCompact(last?.revenue);
-  if (prev?.revenue && last?.revenue) {
-    const ch = (last.revenue - prev.revenue) / Math.abs(prev.revenue) * 100;
-    document.getElementById('kpi-revenue-yoy').innerHTML = yoySpan(ch) + ' г/г';
-  }
+  setYoY('kpi-revenue-yoy', last?.revenue, base?.revenue);
   document.getElementById('kpi-revenue-period').textContent = last?.label || '';
 
   document.getElementById('kpi-netprofit').textContent = fmtAmountCompact(last?.net_profit);
-  if (prev?.net_profit && last?.net_profit) {
-    const ch = (last.net_profit - prev.net_profit) / Math.abs(prev.net_profit) * 100;
-    document.getElementById('kpi-netprofit-yoy').innerHTML = yoySpan(ch) + ' г/г';
-  }
+  setYoY('kpi-netprofit-yoy', last?.net_profit, base?.net_profit);
   document.getElementById('kpi-netprofit-period').textContent = last?.label || '';
 
   const ebitM = last?.revenue ? (last.ebit / last.revenue * 100) : null;
@@ -630,7 +668,7 @@ function updateKPIs(series) {
     // Quarterly/LTM mode: use EPS from series
     const epsFromSeries = series.length > 0 ? series[series.length - 1]?.eps : null;
     document.getElementById('kpi-eps').textContent = epsFromSeries != null ? fmtPerShare(epsFromSeries) : '–';
-    document.getElementById('kpi-eps-yoy').innerHTML = '';
+    setYoY('kpi-eps-yoy', epsFromSeries, base?.eps);
     document.getElementById('kpi-eps-period').textContent = last?.label || '';
   }
 }
